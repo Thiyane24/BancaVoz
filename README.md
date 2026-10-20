@@ -30,8 +30,15 @@ export BANCAVOZ_BEARER_TOKEN='change-me'
 uvicorn bancavoz.api:app --reload
 ```
 
-Open `http://127.0.0.1:8000/sim` for the simulator or `/docs` for the OpenAPI
-documentation.
+Open `http://127.0.0.1:8000/` for the landing page, `/app` for the merchant
+console, `/sim` for the simulator, or `/docs` for the OpenAPI documentation.
+
+The frontend is deliberately dependency-free: semantic HTML, local CSS, and
+ES-module JavaScript are served from `bancavoz/web`. Console authentication is
+token-in-memory only. The console can display summary and stock data through
+the existing endpoints; credit balances, a ledger listing, and console command
+writes remain clearly marked unavailable because no corresponding backend
+endpoints exist. Use the simulator for the available command endpoint.
 
 ## Architecture
 

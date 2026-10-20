@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BancaVoz · merchant console</title><link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body class="paper">
+  <header class="site-header shell"><a class="wordmark" href="/">Banca<span>Voz</span></a><nav aria-label="Console navigation"><a href="/sim">Simulator</a><a href="/">Home</a></nav></header>
+  <main class="shell console">
+    <section id="signin" class="signin-panel">
+      <p class="eyebrow">Merchant console</p><h1>Your books, at a glance.</h1><p class="muted">Sign in with the bearer token configured for this BancaVoz instance. It stays in memory and is cleared when you leave.</p>
+      <form id="signin-form"><label for="token">Access token</label><input id="token" name="token" type="password" autocomplete="off" required placeholder="dev-token"><button class="button" type="submit">Enter console</button><p id="signin-status" class="status" role="status"></p></form>
+    </section>
+    <section id="dashboard" hidden>
+      <div class="console-heading"><div><p class="eyebrow">Merchant console</p><h1>Good morning, seller.</h1></div><button id="signout" class="button button-ghost">Clear session</button></div>
+      <div id="global-status" class="status" role="status" aria-live="polite"></div>
+      <div class="card-grid overview-grid">
+        <article class="metric-card"><span>Net</span><strong id="net-value">—</strong><small id="net-label">Loading summary</small></article>
+        <article class="metric-card"><span>Sales</span><strong id="sales-value">—</strong><small>Recorded revenue</small></article>
+        <article class="metric-card"><span>Expenses</span><strong id="expenses-value">—</strong><small>Recorded outgoings</small></article>
+      </div>
+      <div class="card-grid panel-grid">
+        <article class="panel panel-wide"><div class="panel-heading"><div><p class="eyebrow">Daily digest</p><h2>What happened today</h2></div><button class="icon-button" data-refresh aria-label="Refresh digest">↻</button></div><p id="digest" class="digest empty-state">Waiting for your first summary.</p></article>
+        <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Credit</p><h2>Customers who owe</h2></div></div><div id="credit-list" class="list empty-state">Credit balances are not exposed by this endpoint yet.</div></article>
+        <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Stock</p><h2>On the shelf</h2></div><button class="icon-button" data-refresh aria-label="Refresh stock">↻</button></div><div id="stock-list" class="list empty-state">No stock recorded yet.</div></article>
+        <article class="panel panel-wide"><div class="panel-heading"><div><p class="eyebrow">Ledger</p><h2>Recent entries</h2></div></div><div class="list empty-state">A read-only ledger endpoint is not available in this MVP.</div></article>
+      </div>
+      <section class="command-bar" aria-labelledby="command-title"><div><p class="eyebrow">Make an entry</p><h2 id="command-title">Tell the ledger what happened.</h2></div><form id="command-form"><label class="sr-only" for="command">Voice or text command</label><input id="command" placeholder="Try “sold 2 rice at 10”" autocomplete="off"><button class="button" type="submit">Send</button><button id="mic" class="button button-ghost" type="button">Speak</button></form><p id="command-status" class="status" role="status"></p></section>
+    </section>
+  </main>
+  <script type="module" src="/assets/app.js"></script>
+</body>
+</html>

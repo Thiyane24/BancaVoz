@@ -7,6 +7,24 @@ def test_healthz():
     assert TestClient(app).get("/healthz").json() == {"status": "ok"}
 
 
+def test_static_pages_and_assets():
+    client = TestClient(app)
+    for path in ("/", "/app", "/sim"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "<!doctype html>" in response.text.lower()
+    for path in ("/app", "/sim"):
+        assert "src=\"/assets/" in client.get(path).text
+    css = client.get("/assets/styles.css")
+    assert css.status_code == 200
+    assert "text/css" in css.headers["content-type"]
+    assert "--rust" in css.text
+    js = client.get("/assets/sim.js")
+    assert js.status_code == 200
+    assert "javascript" in js.headers["content-type"]
+    assert "<script>" not in client.get("/sim").text
+
+
 def test_bearer_auth():
     client = TestClient(app)
     assert client.get("/summary").status_code == 401

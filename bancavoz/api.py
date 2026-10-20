@@ -3,10 +3,12 @@ from __future__ import annotations
 import os
 import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .db import Database
@@ -14,6 +16,7 @@ from .digest import bedrock_digest, digest_facts, render_digest
 from .service import LedgerService
 
 app = FastAPI(title="BancaVoz")
+STATIC_DIR = Path(__file__).parent / "web"
 service = LedgerService(
     Database(os.getenv("BANCAVOZ_DATABASE_URL", "sqlite:///./bancavoz.db")),
     os.getenv("BANCAVOZ_CURRENCY", "MZN"),
@@ -182,17 +185,8 @@ def top_sellers(day: str | None = Query(None), timezone: str = Query("UTC"),
 
 @app.get("/sim", response_class=HTMLResponse)
 @app.get("/simulator", response_class=HTMLResponse)
-def simulator():
-    return """<!doctype html><meta charset="utf-8"><title>BancaVoz simulator</title>
-    <h1>Voice simulator</h1><input id="utterance" autofocus>
-    <button onclick="send()">Send</button><button onclick="listen()">Mic</button>
-    <pre id="result"></pre><script>
-    async function send(){const utterance=document.getElementById('utterance').value;
-      const r=await fetch('/sim/utterance',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({utterance})}); document.getElementById('result').textContent=JSON.stringify(await r.json(),null,2);}
-    function listen(){const S=window.SpeechRecognition||window.webkitSpeechRecognition;if(!S)return;
-      const s=new S();s.onresult=e=>{document.getElementById('utterance').value=e.results[0][0].transcript;send()};s.start();}
-    </script>"""
+def simulator() -> FileResponse:
+    return FileResponse(STATIC_DIR / "sim.html")
 
 
 @app.post("/sim/utterance")
@@ -276,3 +270,16 @@ def _mount_official_mcp() -> None:
 
 
 _mount_official_mcp()
+
+
+app.mount("/assets", StaticFiles(directory=STATIC_DIR / "static"), name="assets")
+
+
+@app.get("/", response_class=HTMLResponse)
+def landing_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/app", response_class=HTMLResponse)
+def merchant_console() -> FileResponse:
+    return FileResponse(STATIC_DIR / "app.html")

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BancaVoz · simulator</title><link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body class="paper">
+  <header class="site-header shell"><a class="wordmark" href="/">Banca<span>Voz</span></a><nav aria-label="Primary navigation"><a href="/">Home</a><a class="button button-small" href="/app">Open console</a></nav></header>
+  <main class="shell simulator">
+    <section class="sim-heading"><p class="eyebrow">No account needed</p><h1>Try a market-day command.</h1><p class="lede">This simulator uses the same deterministic command surface as the MVP. Nothing is sent to a voice provider.</p></section>
+    <section class="sim-card"><form id="sim-form"><label for="utterance">What happened?</label><div class="command-row"><input id="utterance" autofocus autocomplete="off" placeholder="“sold 2 rice at 10”"><button class="button" type="submit">Run command</button><button id="listen" class="button button-ghost" type="button">Use mic</button></div><p class="hint">Try: sold 2 rice at 10 · spent 50 · summary</p></form><div id="sim-status" class="status" role="status" aria-live="polite"></div><div id="sim-result" class="result" hidden><div class="result-speech"><span class="eyebrow">BancaVoz says</span><p id="speech"></p></div><div><span class="eyebrow">Tool calls</span><pre id="tool-calls"></pre></div></div></section>
+  </main>
+  <script type="module" src="/assets/sim.js"></script>
+</body>
+</html>
