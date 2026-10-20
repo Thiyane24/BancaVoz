@@ -214,21 +214,47 @@ class LedgerService:
         return start.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S")
 
     def summary(self, merchant_id: str, *, day: str | date | None = None,
-                timezone_name: str = "UTC") -> dict[str, Any]:
+                timezone_name: str = "Africa/Maputo") -> dict[str, Any]:
+        if day is None:
+            day = datetime.now(UTC if timezone_name.upper() in ("UTC", "Z") else ZoneInfo(timezone_name)).date()
         start, end = self._bounds(day, timezone_name)
         with self.db.transaction() as conn:
-            sql = "SELECT entry_type, amount_minor FROM ledger_entries WHERE merchant_id=?"
+            sql = """SELECT e.entry_type, e.amount_minor, e.metadata_json
+                     FROM ledger_entries e
+                     WHERE e.merchant_id=? AND e.entry_type <> 'undo'
+                       AND NOT EXISTS (
+                         SELECT 1 FROM ledger_entries u
+                         WHERE u.merchant_id=e.merchant_id
+                           AND u.entry_type='undo'
+                           AND u.reversed_entry_id=e.id
+                       )"""
             params: list[Any] = [merchant_id]
             if start:
                 sql += " AND created_at BETWEEN ? AND ?"
                 params += [start, end]
             rows = conn.execute(sql, params).fetchall()
-        totals = defaultdict(int)
+        totals = {
+            "sales": 0,
+            "expenses": 0,
+            "profit": 0,
+            "credit_given": 0,
+            "credit_collected": 0,
+            "entry_count": 0,
+        }
         for row in rows:
-            sign = -1 if row["entry_type"] in ("expense", "credit", "undo") else 1
-            totals[row["entry_type"]] += row["amount_minor"]
-            totals["net"] += sign * row["amount_minor"]
-        return dict(totals)
+            metadata = json.loads(row["metadata_json"])
+            if row["entry_type"] == "sale":
+                totals["sales"] += row["amount_minor"]
+                totals["credit_given"] += int(metadata.get("credit_delta", 0))
+            elif row["entry_type"] == "expense":
+                totals["expenses"] += row["amount_minor"]
+            elif row["entry_type"] == "credit":
+                totals["credit_given"] += int(metadata.get("credit_delta", 0))
+            elif row["entry_type"] == "payment":
+                totals["credit_collected"] += row["amount_minor"]
+            totals["entry_count"] += 1
+        totals["profit"] = totals["sales"] - totals["expenses"]
+        return totals
 
     def set_stock(self, merchant_id: str, product: str, quantity: int,
                   low_stock_threshold: int = 0) -> dict[str, Any]:

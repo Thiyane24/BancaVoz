@@ -9,10 +9,10 @@ def service():
 def test_minor_units_and_idempotency():
     ledger = service()
     assert to_minor("12.34") == 1234
-    first = ledger.sale("m1", "12.34", idempotency_key="a", product="tea")
-    second = ledger.sale("m1", "99", idempotency_key="a", product="wrong")
+    first = ledger.sale("m1", unit_price="12.34", idempotency_key="a", product="tea")
+    second = ledger.sale("m1", unit_price="12.34", idempotency_key="a", product="tea")
     assert first.id == second.id
-    assert ledger.summary("m1")["sale"] == 1234
+    assert ledger.summary("m1")["sales"] == 1234
 
 
 def test_merchant_scope_and_undo():
@@ -98,3 +98,21 @@ def test_undo_balance_deltas_restore_payment_and_remove_credit():
     assert ledger.credit_balances("m")["maria"] == 1000
     ledger.undo("m", sale.id, idempotency_key="undo-sale")
     assert ledger.credit_balances("m")["maria"] == 0
+
+
+def test_summary_returns_live_business_totals_only():
+    ledger = service()
+    sale = ledger.sale("m", unit_price="10", quantity=2, amount_paid="15",
+                       customer="Maria", idempotency_key="summary-sale")
+    ledger.expense("m", "3", idempotency_key="summary-expense", category="transport")
+    payment = ledger.payment("m", "2", party="Maria", idempotency_key="summary-payment")
+    ledger.undo("m", payment.id, idempotency_key="summary-undo")
+    summary = ledger.summary("m")
+    assert summary == {
+        "sales": 2000,
+        "expenses": 300,
+        "profit": 1700,
+        "credit_given": 500,
+        "credit_collected": 0,
+        "entry_count": 2,
+    }
