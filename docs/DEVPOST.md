@@ -2,33 +2,37 @@
 
 ## Inspiration
 
-Informal merchants run on trust and memory. A lost credit note can mean lost
-income. BancaVoz gives a market seller a voice-first ledger that works around
-busy hands and busy queues.
+BancaVoz comes from Mozambique, where informal market sellers often manage
+sales and customer credit while serving people with both hands occupied. A
+short voice interaction can preserve a credit note without forcing a seller
+through a form.
 
 ## What it does
 
 BancaVoz records sales, expenses, credit, payments, summaries, and reversals
-through a small bookkeeping service with a browser simulator fallback.
+through a small bookkeeping service with a browser simulator and an official
+MCP tools endpoint.
 
 ## How we built it
 
-Python, FastAPI, SQLite for local reproducibility, an append-only ledger, integer
-minor-unit money, idempotent writes, Docker, and an MCP-compatible adapter. The
-service layer remains deterministic and testable without AWS credentials.
+Python, FastAPI, SQLite for local reproducibility, integer minor-unit money,
+idempotent writes, Docker, and the MCP Python SDK. Financial facts are
+calculated by the service layer; the current verified summary path uses a
+deterministic template. Bedrock is not claimed as deployed or verified.
 
-## Challenges
+## Impact
 
-Short spoken responses, retry-safe writes, preserving audit history during undo,
-and keeping the external language layer separate from financial rules.
+The intended impact is fewer lost credit notes, safer retries, and more
+accessible bookkeeping for informal sellers.
 
 ## Accomplishments
 
-A runnable open-source MVP with a simulator, tests, Docker packaging, schema,
-license, and documented limitations.
+The local suite passes 20 tests; Ruff and mypy pass; the official MCP
+initialize/tools-list smoke path returns HTTP 200 and 10 tools; the repository
+is public and reproducible locally.
 
 ## What's next
 
-Complete PostgreSQL hosting and official MCP transport validation, finish the
-full credit/digest acceptance suite, add Portuguese speech, and validate Alexa+
-registration.
+Implement and verify PostgreSQL migrations and hosted deployment, complete the
+six-utterance simulator contract, add rate limiting and merchant token
+storage, and finish the Bedrock Converse digest validation/cache path.

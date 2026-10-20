@@ -2,27 +2,29 @@
 
 ## Why voice?
 
-Market sellers may be serving customers with wet hands and no time to fill
-forms. One spoken sentence becomes a structured ledger entry.
+Market sellers may be serving customers with both hands occupied. One spoken
+sentence can become a structured ledger entry.
 
-## Is the model trusted with money?
+## Is a model trusted with money?
 
-No. The service owns validation, conversion, idempotency, and persistence. The
-model is an input adapter; the digest model is intended to narrate verified
-facts, not calculate them.
+No. The service owns validation, integer conversion, idempotency, persistence,
+and reversal rules. The verified summary route uses deterministic facts and a
+template.
 
 ## Why append-only records?
 
-Undo creates a compensating reversal. The original row remains available for an
-audit trail.
+Undo creates a compensating row, preserving the original audit trail.
 
 ## Why MCP?
 
-MCP exposes typed bookkeeping capabilities to an agent while keeping business
-rules inside the service layer.
+The official MCP SDK exposes typed bookkeeping tools while the service layer
+retains the financial rules.
 
-## What is verified today?
+## What is verified?
 
-The local MVP, six tests, compilation, and dependency-light MCP listing/call
-smoke path are verified. Official SDK transport, live PostgreSQL, external HTTPS,
-and Alexa+ registration are not claimed as verified.
+Local tests, Ruff, mypy, compileall, the official MCP initialize/tools-list
+smoke, and generated tools documentation are verified. Public HTTPS,
+PostgreSQL, rate limiting, complete simulator six-utterance behavior, Bedrock
+Converse, and Alexa+ registration are not verified.
+
+For the single source of truth, use `docs/GAPS.md`.

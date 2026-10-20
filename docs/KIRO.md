@@ -1,6 +1,17 @@
-# Kiro Crew notes
+# Kiro notes
 
-This repository was produced as a focused hackathon MVP with an explicit
-requirements brief, a traceable gap list, a deterministic fallback path, and
-tests run locally. Add screenshots or exact Kiro Crew usage notes here only when
-they are available; this file intentionally does not fabricate tool usage.
+## Real entries
+
+- The project was developed as a focused hackathon MVP with a requirements
+  brief, local tests, deterministic fallback behavior, and documented gaps.
+- The repository does not contain a verified Kiro Crew execution log or
+  screenshots, so none are claimed here.
+
+## Missing
+
+- No Kiro-specific evidence is available in this workspace.
+- PostgreSQL deployment, public URL smoke output, and the complete demo flow
+  remain unverified.
+
+Please provide any Kiro run IDs, screenshots, or required submission wording
+before adding them to this file.

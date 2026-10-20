@@ -2,16 +2,19 @@
 
 - [x] Public repository
 - [x] MIT license
-- [x] README and setup instructions
-- [x] Dockerfile and compose file
-- [x] Tests pass locally
-- [x] Friction log exists
-- [x] Honest limitations documented
-- [ ] Public HTTPS URL verified externally
-- [ ] Official MCP Streamable HTTP client test passes
-- [ ] PostgreSQL deployment validated
-- [ ] Six-utterance demo passes end to end
-- [ ] Demo video recorded under three minutes
-- [ ] Alexa+ registration verified, or simulator limitation stated in submission
-- [ ] Final official rules re-read
-- [ ] Devpost text pasted and reviewed
+- [x] README and local setup instructions
+- [x] Dockerfile and local compose file
+- [x] 20 local tests pass
+- [x] Ruff passes
+- [x] mypy passes
+- [x] Official MCP initialize/tools-list local smoke passes
+- [x] Honest limitations documented in `docs/GAPS.md`
+- [ ] Public HTTPS URL and smoke output
+- [ ] PostgreSQL adapter, migrations, and CI database job
+- [ ] Complete six-utterance simulator test
+- [ ] Rate limiting and merchant token directory
+- [ ] Bedrock Converse digest validation/cache
+- [ ] Demo video under three minutes
+- [ ] Alexa+ registration
+
+`docs/GAPS.md` is the status source of truth.
