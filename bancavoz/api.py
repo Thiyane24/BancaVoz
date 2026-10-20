@@ -156,6 +156,20 @@ def stock(low_stock: bool = Query(False), merchant: str = Depends(auth)):
     return service.stock(merchant, low_stock=low_stock)
 
 
+@app.get("/entries")
+def entries(merchant: str = Depends(auth)):
+    return [entry.as_dict() for entry in service.list_entries(merchant)]
+
+
+@app.get("/credits")
+def credits_list(merchant: str = Depends(auth)):
+    return service.credit_balances(merchant)
+
+
+class Command(BaseModel):
+    utterance: str
+
+
 class StockUpdate(BaseModel):
     product: str
     quantity: int
@@ -185,15 +199,14 @@ def simulator() -> FileResponse:
     return FileResponse(STATIC_DIR / "sim.html")
 
 
-@app.post("/sim/utterance")
-async def sim_utterance(body: dict[str, str]) -> dict:
-    text = body.get("utterance", "").strip()
+def _parse_command(text: str, merchant: str) -> dict:
+    text = text.strip()
     lowered = text.lower()
     calls: list[dict] = []
     sale_match = re.search(r"sold\s+(\d+)\s+(.+?)\s+(?:at|for)\s+([\d.]+)", lowered)
     if sale_match:
         quantity, item, price = int(sale_match.group(1)), sale_match.group(2).strip(), float(sale_match.group(3))
-        result = service.sale("demo", unit_price=price, idempotency_key=f"sim-sale:{text}",
+        result = service.sale(merchant, unit_price=price, idempotency_key=f"sim-sale:{text}",
                               product=item, quantity=quantity)
         calls.append({"tool": "log_sale", "arguments": {"item": item, "quantity": quantity,
                                                          "unit_price": price}})
@@ -201,7 +214,7 @@ async def sim_utterance(body: dict[str, str]) -> dict:
     expense_match = re.search(r"(?:spent|expense).*?([\d.]+)", lowered)
     if expense_match:
         amount = Decimal(expense_match.group(1))
-        result = service.expense("demo", amount, idempotency_key=f"sim-expense:{text}")
+        result = service.expense(merchant, amount, idempotency_key=f"sim-expense:{text}")
         calls.append({"tool": "log_expense", "arguments": {"amount": amount}})
         return {"speech": "Expense logged.", "data": result.as_dict(), "tool_calls": calls}
     if "paid" in lowered or "payment" in lowered:
@@ -209,19 +222,35 @@ async def sim_utterance(body: dict[str, str]) -> dict:
         if payment_match:
             amount = Decimal(payment_match.group(1))
             customer = "Maria"
-            result = service.payment("demo", amount, idempotency_key=f"sim-payment:{text}", party=customer)
+            result = service.payment(merchant, amount, idempotency_key=f"sim-payment:{text}", party=customer)
             calls.append({"tool": "record_credit_payment", "arguments": {"customer": customer, "amount": amount}})
             return {"speech": f"{customer} payment recorded.", "data": result.as_dict(), "tool_calls": calls}
     if "undo" in lowered or "oops" in lowered:
-        result = service.undo_last("demo", idempotency_key=f"sim-undo:{text}")
+        result = service.undo_last(merchant, idempotency_key=f"sim-undo:{text}")
         calls.append({"tool": "undo_last_entry", "arguments": {}})
         return {"speech": "Last entry undone.", "data": result.as_dict(), "tool_calls": calls}
     if "summary" in lowered or "how did" in lowered:
         calls.append({"tool": "get_daily_summary", "arguments": {}})
-        facts = digest_facts(service.summary("demo"), service.top_sellers("demo"))
+        facts = digest_facts(service.summary(merchant), service.top_sellers(merchant))
         return {"speech": render_digest(facts, service.currency), "data": facts, "tool_calls": calls}
     return {"speech": "Try saying sold, spent, or summary.", "data": {"needs_clarification": True},
             "tool_calls": calls}
+
+
+@app.post("/sim/utterance")
+async def sim_utterance(body: dict[str, str]) -> dict:
+    try:
+        return _parse_command(body.get("utterance", ""), "demo")
+    except (KeyError, ValueError, InvalidOperation) as exc:
+        return {"speech": str(exc), "data": {"error": str(exc)}, "tool_calls": []}
+
+
+@app.post("/command")
+def command(body: Command, merchant: str = Depends(auth)) -> dict:
+    try:
+        return _parse_command(body.utterance, merchant)
+    except (KeyError, ValueError, InvalidOperation) as exc:
+        return {"speech": str(exc), "data": {"error": str(exc)}, "tool_calls": []}
 
 
 def create_app(settings: dict[str, str] | None = None) -> FastAPI:

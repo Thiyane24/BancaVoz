@@ -10,7 +10,7 @@ function setStatus(id, message) { $(id).textContent = message; }
 async function loadDashboard() {
   setStatus("global-status", "Refreshing the ledger…");
   try {
-    const [summary, stock] = await Promise.all([api("/summary"), api("/stock")]);
+    const [summary, stock, credits, entries] = await Promise.all([api("/summary"), api("/stock"), api("/credits"), api("/entries")]);
     $("net-value").textContent = money(summary.net_minor);
     $("sales-value").textContent = money(summary.sales_minor);
     $("expenses-value").textContent = money(summary.expenses_minor);
@@ -18,9 +18,20 @@ async function loadDashboard() {
     $("digest").textContent = summary.digest || "No digest is available yet.";
     $("digest").classList.remove("empty-state");
     renderStock(stock);
+    renderCredits(credits);
+    renderEntries(entries);
     setStatus("global-status", "");
   } catch (error) {
     setStatus("global-status", `Could not refresh: ${error.message}. Check the token or try again.`);
+  }
+  function renderCredits(items) {
+    const target = $("credit-list");
+    const rows = Object.entries(items).filter(([, value]) => Number(value) > 0);
+    target.textContent = rows.length ? rows.map(([name, value]) => `${name}: ${money(value)}`).join("\n") : "No customers owe money.";
+  }
+  function renderEntries(items) {
+    const target = $("entries-list");
+    target.textContent = items.length ? items.slice(0, 10).map((item) => `${item.entry_type}: ${money(item.amount_minor)}`).join("\n") : "No entries yet.";
   }
 }
 function renderStock(items) {
@@ -41,7 +52,12 @@ $("command-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const command = $("command").value.trim();
   if (!command) return;
-  setStatus("command-status", "The console command endpoint is not available; use the simulator for voice/text commands.");
+  setStatus("command-status", "Sending command…");
+  try {
+    const response = await api("/command", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ utterance: command }) });
+    setStatus("command-status", response.speech || "Command recorded.");
+    await loadDashboard();
+  } catch (error) { setStatus("command-status", `Command failed: ${error.message}`); }
 });
 $("mic").addEventListener("click", () => {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;

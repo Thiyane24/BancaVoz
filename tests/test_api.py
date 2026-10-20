@@ -115,3 +115,28 @@ def test_factory_isolates_database_and_mcp_paths_are_canonical():
         assert client.post("/mcp", headers={"Authorization": "Bearer factory-token"}).status_code != 307
         assert client.post("/mcp-legacy", headers={"Authorization": "Bearer factory-token"}).status_code == 404
         assert client.post("/simulator", data={"utterance": "hello"}).status_code == 405
+
+
+def test_entries_credits_and_command_are_authenticated_and_console_wired():
+    from bancavoz.api import create_app
+
+    isolated = create_app({
+        "database_url": "sqlite:///:memory:",
+        "currency": "MZN",
+        "bearer_token": "factory-token",
+    })
+    with TestClient(isolated) as client:
+        assert client.get("/entries").status_code == 401
+        assert client.get("/credits").status_code == 401
+        assert client.post("/command", json={"utterance": "how did today go"}).status_code == 401
+        headers = {"Authorization": "Bearer factory-token"}
+        assert client.get("/entries", headers=headers).status_code == 200
+        assert client.get("/credits", headers=headers).status_code == 200
+        assert client.post("/command", headers=headers,
+                           json={"utterance": "how did today go"}).status_code == 200
+    app_js = Path("bancavoz/web/static/app.js").read_text(encoding="utf-8")
+    app_html = Path("bancavoz/web/app.html").read_text(encoding="utf-8")
+    assert 'api("/entries")' in app_js
+    assert 'api("/credits")' in app_js
+    assert 'api("/command"' in app_js
+    assert "Recent entries" in app_html

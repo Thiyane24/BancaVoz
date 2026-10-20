@@ -21,9 +21,9 @@
       </div>
       <div class="card-grid panel-grid">
         <article class="panel panel-wide"><div class="panel-heading"><div><p class="eyebrow">Daily digest</p><h2>What happened today</h2></div><button class="icon-button" data-refresh aria-label="Refresh digest">↻</button></div><p id="digest" class="digest empty-state">Waiting for your first summary.</p></article>
-        <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Credit</p><h2>Customers who owe</h2></div></div><div id="credit-list" class="list empty-state">Credit balances are not exposed by this endpoint yet.</div></article>
+        <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Credit</p><h2>Customers who owe</h2></div></div><div id="credit-list" class="list empty-state">No customers owe money.</div></article>
         <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Stock</p><h2>On the shelf</h2></div><button class="icon-button" data-refresh aria-label="Refresh stock">↻</button></div><div id="stock-list" class="list empty-state">No stock recorded yet.</div></article>
-        <article class="panel panel-wide"><div class="panel-heading"><div><p class="eyebrow">Ledger</p><h2>Recent entries</h2></div></div><div class="list empty-state">A read-only ledger endpoint is not available in this MVP.</div></article>
+        <article class="panel panel-wide"><div class="panel-heading"><div><p class="eyebrow">Ledger</p><h2>Recent entries</h2></div></div><div id="entries-list" class="list empty-state">No entries yet.</div></article>
       </div>
       <section class="command-bar" aria-labelledby="command-title"><div><p class="eyebrow">Make an entry</p><h2 id="command-title">Tell the ledger what happened.</h2></div><form id="command-form"><label class="sr-only" for="command">Voice or text command</label><input id="command" placeholder="Try “sold 2 rice at 10”" autocomplete="off"><button class="button" type="submit">Send</button><button id="mic" class="button button-ghost" type="button">Speak</button></form><p id="command-status" class="status" role="status"></p></section>
     </section>
