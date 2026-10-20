@@ -50,7 +50,7 @@ def bedrock_digest(facts: dict[str, Any], currency: str = "MZN") -> str | None:
     if not model_id:
         return None
     try:
-        import boto3
+        import boto3  # type: ignore[import-not-found]
         body = {"inputText": render_digest(facts, currency), "textGenerationConfig": {"maxTokenCount": 120}}
         response = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "ap-south-1")).invoke_model(
             modelId=model_id, body=__import__("json").dumps(body))

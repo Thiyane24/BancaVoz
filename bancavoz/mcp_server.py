@@ -28,7 +28,7 @@ def build_mcp(service: LedgerService, merchant_id: str = "merchant"):
                              quantity=quantity, unit_price=unit_price, customer=customer,
                              amount_paid=amount_paid)
         return {"speech": sale_logged(entry.amount_minor,
-                                      int(entry.metadata.get("amount_paid_minor", entry.amount_minor)),
+                                      int((entry.metadata or {}).get("amount_paid_minor", entry.amount_minor)),
                                       entry.party, service.currency), "data": entry.as_dict()}
 
     @mcp.tool(description="Log an expense. Example: spent 200 on transport.")

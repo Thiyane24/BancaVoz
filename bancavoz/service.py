@@ -81,10 +81,10 @@ class LedgerService:
             )
             return self._row(conn.execute("SELECT * FROM ledger_entries WHERE id=?", (cur.lastrowid,)).fetchone())
 
-    def sale(self, merchant_id: str, amount: float | str | None = None, *, idempotency_key: str,
+    def sale(self, merchant_id: str, amount: float | str | Decimal | None = None, *, idempotency_key: str,
              product: str | None = None, quantity: int = 1, party: str | None = None,
-             description: str = "Sale", unit_price: float | str | None = None,
-             amount_paid: float | str | None = None, customer: str | None = None) -> Entry:
+             description: str = "Sale", unit_price: float | str | Decimal | None = None,
+             amount_paid: float | str | Decimal | None = None, customer: str | None = None) -> Entry:
         if quantity < 1:
             raise ValueError("quantity must be at least 1")
         if unit_price is None:
@@ -120,12 +120,12 @@ class LedgerService:
                            metadata=metadata, request_hash=request_hash)
         return entry
 
-    def expense(self, merchant_id: str, amount: float | str, *, idempotency_key: str,
+    def expense(self, merchant_id: str, amount: float | str | Decimal, *, idempotency_key: str,
                 category: str = "expense", description: str = "Expense") -> Entry:
         return self.append(merchant_id, entry_type="expense", amount_minor=to_minor(amount),
                            idempotency_key=idempotency_key, product=category, description=description)
 
-    def credit(self, merchant_id: str, amount: float | str, *, idempotency_key: str,
+    def credit(self, merchant_id: str, amount: float | str | Decimal, *, idempotency_key: str,
                party: str, description: str = "Credit") -> Entry:
         return self.append(merchant_id, entry_type="credit", amount_minor=to_minor(amount),
                            idempotency_key=idempotency_key, party=party.strip(), description=description,
@@ -133,7 +133,7 @@ class LedgerService:
                            request_hash=_request_hash({"type": "credit", "amount": to_minor(amount),
                                                        "party": normalize_customer(party)}))
 
-    def payment(self, merchant_id: str, amount: float | str, *, idempotency_key: str,
+    def payment(self, merchant_id: str, amount: float | str | Decimal, *, idempotency_key: str,
                 party: str, description: str = "Payment received") -> Entry:
         key = normalize_customer(party)
         owed = self.credit_balances(merchant_id).get(key, 0)
@@ -207,7 +207,7 @@ class LedgerService:
             return None, None
         local_day = date.fromisoformat(day) if isinstance(day, str) else day
         if timezone_name.upper() in ("UTC", "Z"):
-            tz = UTC
+            tz: Any = UTC
         else:
             try:
                 tz = ZoneInfo(timezone_name)
