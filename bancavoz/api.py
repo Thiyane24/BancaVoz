@@ -149,6 +149,8 @@ def sales(body: Transaction, merchant: str = Depends(auth)):
 
 @app.post("/expenses")
 def expenses(body: Transaction, merchant: str = Depends(auth)):
+    if body.amount is None:
+        raise HTTPException(422, "amount is required")
     try:
         return service.expense(merchant, body.amount, idempotency_key=body.idempotency_key,
                                category=body.product or "expense").as_dict()
@@ -158,6 +160,8 @@ def expenses(body: Transaction, merchant: str = Depends(auth)):
 
 @app.post("/credits")
 def credits(body: Transaction, merchant: str = Depends(auth)):
+    if body.amount is None:
+        raise HTTPException(422, "amount is required")
     if not body.party:
         raise HTTPException(422, "party is required")
     return service.credit(merchant, body.amount, idempotency_key=body.idempotency_key,
@@ -166,6 +170,8 @@ def credits(body: Transaction, merchant: str = Depends(auth)):
 
 @app.post("/payments")
 def payments(body: Transaction, merchant: str = Depends(auth)):
+    if body.amount is None:
+        raise HTTPException(422, "amount is required")
     if not body.party:
         raise HTTPException(422, "party is required")
     return service.payment(merchant, body.amount, idempotency_key=body.idempotency_key,
