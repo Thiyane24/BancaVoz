@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from bancavoz.api import app
 
-
 EXAMPLES = {
     "log_sale": ("Logged. MZN 1,350.00 total. Maria owes MZN 675.00.",
                  "unit_price is required"),
