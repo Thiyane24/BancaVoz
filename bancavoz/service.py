@@ -88,18 +88,23 @@ class LedgerService:
              amount_paid: float | str | None = None, customer: str | None = None) -> Entry:
         if quantity < 1:
             raise ValueError("quantity must be at least 1")
-        if unit_price is not None:
-            total_minor = to_minor(unit_price) * quantity
-            unit_minor = to_minor(unit_price)
-        elif amount is not None:
-            total_minor = to_minor(amount)
-            unit_minor = total_minor // quantity
-        else:
-            raise ValueError("amount or unit_price is required")
+        if unit_price is None:
+            raise ValueError("unit_price is required")
+        unit_minor = to_minor(unit_price)
+        if unit_minor <= 0:
+            raise ValueError("unit_price must be greater than zero")
+        if amount is not None:
+            raise ValueError("amount-only sales are not supported; provide unit_price")
+        total_minor = unit_minor * quantity
         party = customer or party
         paid_minor = total_minor if amount_paid is None else to_minor(amount_paid)
         if paid_minor < 0 or paid_minor > total_minor:
             raise ValueError("amount_paid must be between zero and total")
+        if paid_minor < total_minor and not party:
+            raise ValueError("customer is required when amount_paid is less than total")
+        product = " ".join((product or "").split())
+        if not product:
+            raise ValueError("item is required")
         metadata = {
             "amount_paid_minor": paid_minor,
             "credit_minor": total_minor - paid_minor,
