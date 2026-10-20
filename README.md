@@ -2,7 +2,7 @@
 
 BancaVoz is a voice-first bookkeeping MVP for informal market sellers. A seller
 can record sales, expenses, customer credit, payments, summaries, and reversals
-through a FastAPI service, an MCP-compatible JSON-RPC surface, or the browser
+through a FastAPI service, the official MCP Streamable HTTP surface, or the browser
 simulator.
 
 The design is deliberately safety-first: money enters the service as decimal
@@ -35,10 +35,8 @@ console, `/sim` for the simulator, or `/docs` for the OpenAPI documentation.
 
 The frontend is deliberately dependency-free: semantic HTML, local CSS, and
 ES-module JavaScript are served from `bancavoz/web`. Console authentication is
-token-in-memory only. The console can display summary and stock data through
-the existing endpoints; credit balances, a ledger listing, and console command
-writes remain clearly marked unavailable because no corresponding backend
-endpoints exist. Use the simulator for the available command endpoint.
+token-in-memory only. The console reads summary, stock, credits, and entries,
+and sends authenticated commands through the API.
 
 ## Architecture
 
@@ -72,15 +70,18 @@ The default development token is `dev-token`; replace it before deployment.
 | Surface | Purpose |
 | --- | --- |
 | `GET /healthz` | Liveness check |
-| `POST /sales` | Record a sale (`amount` or `unit_price` × `quantity`, optional `amount_paid`) |
+| `POST /sales` | Record a sale (`unit_price` × `quantity`, optional `amount_paid`) |
 | `POST /expenses` | Record an expense |
 | `POST /credits` | Record credit |
 | `POST /payments` | Record a payment |
 | `POST /undo` | Reverse the latest live entry |
 | `GET /summary` | Return ledger facts and a digest |
+| `GET /entries` | List recent authenticated ledger entries |
+| `GET /credits` | Return authenticated customer credit balances |
+| `POST /command` | Parse and execute an authenticated text command |
 | `GET /stock` / `POST /stock` | Show or set stock levels; `?low_stock=true` filters alerts |
 | `GET /top-sellers` | Rank items by quantity, optionally `?day=YYYY-MM-DD&timezone=...` |
-| `POST /mcp` | Official MCP SDK Streamable HTTP tools |
+| `POST /mcp` and `POST /mcp/` | Official MCP SDK Streamable HTTP tools |
 | `GET /sim` | Browser simulator with microphone fallback |
 | `POST /sim/utterance` | Deterministic simulator command endpoint |
 
@@ -94,11 +95,11 @@ python -m pytest -q
 python -m compileall -q bancavoz
 ```
 
-The current tests cover money conversion, idempotency, merchant scoping, undo,
-authentication, health, simulator handling, and MCP listing/call smoke behavior.
-The full hackathon acceptance suite still requires live PostgreSQL, official MCP
-client transport, external HTTPS smoke testing, and the complete six-utterance
-script.
+Latest local run: `python -m pytest -q` → `31 passed`.
+The tests cover money conversion, idempotency conflicts, merchant scoping, undo,
+authentication, health, simulator handling, isolated factories, both MCP paths
+with the official client, and deployment configuration contracts. Live
+PostgreSQL and external HTTPS smoke testing remain unverified.
 
 ## Docker
 
@@ -106,8 +107,18 @@ script.
 docker compose up --build
 ```
 
-The image runs the local SQLite MVP. Do not put real credentials in `.env` files
-committed to Git; use the hosting provider's secret store.
+The compose file includes a health-checked PostgreSQL service, but the current
+application adapter still supports SQLite only. Do not put real credentials in
+`.env` files committed to Git; use the hosting provider's secret store.
+
+## Live URL
+
+Live URL: not deployed.
+
+## Screenshots
+
+Add verified screenshots of `/`, `/app`, `/sim`, and the MCP tools panel here
+after a hosted deployment or a local capture run.
 
 ## Project status
 
