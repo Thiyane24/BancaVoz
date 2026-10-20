@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: bancavoz-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -26,16 +33,30 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
+      - name: Build Tailwind assets
+        shell: bash
+        run: |
+          curl -L --fail --silent --show-error \
+            -o tailwindcss \
+            https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-linux-x64
+          chmod +x tailwindcss
+          ./tailwindcss -c tailwind.config.js \
+            -i bancavoz/web/static/tailwind.input.css \
+            -o bancavoz/web/static/tailwind.css --minify
+          test -s bancavoz/web/static/tailwind.css
       - run: python -m pytest -q
       - run: python -m compileall -q bancavoz
       - run: python -m ruff check bancavoz tests
       - run: python -m mypy bancavoz
       - run: python -m bandit -q -r bancavoz
-      - run: python -m pip_audit
+      - run: pip-audit
       - run: python -m bancavoz.cli
         env:
           BANCAVOZ_DATABASE_URL: postgresql://bancavoz:bancavoz@localhost:5432/bancavoz
           BANCAVOZ_BEARER_TOKEN: ci-token
           BANCAVOZ_MERCHANT_ID: ci-merchant
+      - name: Build container
+        run: docker build --tag bancavoz:ci .
