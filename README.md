@@ -33,11 +33,10 @@ uvicorn bancavoz.api:app --reload
 Open `http://127.0.0.1:8000/` for the landing page, `/app` for the merchant
 console, `/sim` for the simulator, or `/docs` for the OpenAPI documentation.
 
-The frontend uses semantic HTML, a compiled Tailwind utility layer, a small
-theme layer, and dependency-free ES-module JavaScript served from
-`bancavoz/web`. Console authentication is token-in-memory only. The console
-reads summary, stock, credits, and entries, and sends authenticated commands
-through the API.
+The frontend is deliberately dependency-free: semantic HTML, local CSS, and
+ES-module JavaScript are served from `bancavoz/web`. Console authentication is
+token-in-memory only. The console reads summary, stock, credits, and entries,
+and sends authenticated commands through the API.
 
 ## Architecture
 
@@ -98,11 +97,11 @@ python -m pytest -q
 python -m compileall -q bancavoz
 ```
 
-Latest local run: `python -m pytest -q` → `36 passed`.
+Latest local run: `python -m pytest -q` → `31 passed`.
 The tests cover money conversion, idempotency conflicts, merchant scoping, undo,
 authentication, health, simulator handling, isolated factories, both MCP paths
-with the official client, Tailwind asset wiring, and deployment configuration
-contracts. Live PostgreSQL and external HTTPS smoke testing remain unverified.
+with the official client, and deployment configuration contracts. Live
+PostgreSQL and external HTTPS smoke testing remain unverified.
 
 ## Docker
 

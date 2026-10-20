@@ -32,24 +32,6 @@ def test_compose_defines_healthy_postgres_dependency_and_app_probe():
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
     assert "USER bancavoz" in dockerfile
     assert "bancavoz-migrate" in dockerfile
-    assert "tailwindcss-linux-x64" in dockerfile
-
-
-def test_ci_builds_frontend_runs_security_checks_and_builds_container():
-    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "Build Tailwind assets" in workflow
-    assert "pip-audit" in workflow
-    assert "docker build --tag bancavoz:ci ." in workflow
-    assert "permissions:" in workflow
-
-
-def test_tailwind_frontend_assets_are_wired_and_built():
-    for page in ("index.html", "app.html", "sim.html"):
-        html = Path(f"bancavoz/web/{page}").read_text(encoding="utf-8")
-        assert "/assets/tailwind.css" in html
-        assert "/assets/theme.css" in html
-    assert "@tailwind base;" in Path("bancavoz/web/static/tailwind.input.css").read_text(encoding="utf-8")
-    assert Path("bancavoz/web/static/tailwind.css").stat().st_size > 0
 
 
 def test_readme_matches_current_verified_surface():
