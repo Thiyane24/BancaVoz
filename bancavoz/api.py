@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import re
+import hmac
+import uuid
 from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -33,6 +35,16 @@ async def domain_error(_request: Request, exc: Exception):
 for _error_type in (ValueError, KeyError, InvalidOperation):
     app.add_exception_handler(_error_type, domain_error)
 
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'"
+    response.headers["X-Request-ID"] = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    return response
+
 MCP_TOOLS = [
     {"name": "log_sale", "description": "Log a sale.", "inputSchema": {"type": "object"}},
     {"name": "log_expense", "description": "Log an expense.", "inputSchema": {"type": "object"}},
@@ -45,9 +57,11 @@ MCP_TOOLS = [
 
 def auth(authorization: Annotated[str | None, Header()] = None) -> str:
     expected = os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token")
+    if os.getenv("BANCAVOZ_ENV", "development") == "production" and expected == "dev-token":
+        raise HTTPException(503, "production token is not configured")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "missing bearer token")
-    if authorization.removeprefix("Bearer ").strip() != expected:
+    if not hmac.compare_digest(authorization.removeprefix("Bearer ").strip(), expected):
         raise HTTPException(401, "invalid bearer token")
     return "merchant"
 
@@ -72,6 +86,12 @@ class Transaction(BaseModel):
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+def readyz() -> dict[str, str]:
+    service.db.connect()
+    return {"status": "ready"}
 
 
 @app.post("/mcp-legacy")

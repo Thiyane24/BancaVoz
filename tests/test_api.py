@@ -7,6 +7,13 @@ def test_healthz():
     assert TestClient(app).get("/healthz").json() == {"status": "ok"}
 
 
+def test_security_headers_and_readyz():
+    response = TestClient(app).get("/healthz")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Content-Security-Policy"]
+    assert TestClient(app).get("/readyz").status_code == 200
+
+
 def test_static_pages_and_assets():
     client = TestClient(app)
     for path in ("/", "/app", "/sim"):
