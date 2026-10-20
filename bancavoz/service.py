@@ -153,9 +153,21 @@ class LedgerService:
         return balances
 
     def undo_last(self, merchant_id: str, *, idempotency_key: str) -> Entry:
-        for entry in self.list_entries(merchant_id, limit=10000):
-            if entry.entry_type != "undo" and entry.reversed_entry_id is None:
-                return self.undo(merchant_id, entry.id, idempotency_key=idempotency_key)
+        with self.db.transaction() as conn:
+            row = conn.execute(
+                """SELECT e.* FROM ledger_entries e
+                WHERE e.merchant_id=? AND e.entry_type <> 'undo'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM ledger_entries u
+                    WHERE u.merchant_id=e.merchant_id
+                      AND u.entry_type='undo'
+                      AND u.reversed_entry_id=e.id
+                  )
+                ORDER BY e.id DESC LIMIT 1""",
+                (merchant_id,),
+            ).fetchone()
+        if row:
+            return self.undo(merchant_id, row["id"], idempotency_key=idempotency_key)
         raise KeyError("no live entries to undo")
 
     def undo(self, merchant_id: str, entry_id: int, *, idempotency_key: str) -> Entry:

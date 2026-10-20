@@ -75,3 +75,14 @@ def test_empty_idempotency_key_is_generated_and_conflicts_are_rejected():
         assert "different request" in str(exc)
     else:
         raise AssertionError("expected idempotency conflict")
+
+
+def test_undo_last_skips_already_reversed_entries():
+    ledger = service()
+    first = ledger.expense("m", "10", idempotency_key="first")
+    second = ledger.expense("m", "20", idempotency_key="second")
+    undo_second = ledger.undo_last("m", idempotency_key="")
+    undo_first = ledger.undo_last("m", idempotency_key="")
+    assert undo_second.reversed_entry_id == second.id
+    assert undo_first.reversed_entry_id == first.id
+    assert undo_second.id != undo_first.id
