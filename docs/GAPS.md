@@ -18,8 +18,8 @@ passed. Unverified claims remain open.
 | Full simulator six-utterance contract | No complete passing test | Open |
 | Persistent digest cache/invalidation | No passing test | Open |
 | Bedrock Converse and numeric rejection | No passing test | Open |
-| PostgreSQL adapter, merchants, migrations | `Database` rejects non-SQLite URLs | Open |
-| Rate limiting and structured logs | No passing test | Open |
-| Token-to-merchant hashed lookup | Current auth returns one configured merchant | Open |
+| PostgreSQL adapter, merchants, migrations | API/deployment tests pass; hosted smoke not run | Partial |
+| Rate limiting and structured logs | API/deployment tests pass; multi-replica limiter not verified | Partial |
+| Token-to-merchant hashed lookup | API/deployment tests pass; hosted rotation not run | Partial |
 | Public HTTPS deployment | No public URL smoke run recorded | Open |
-| Docker/Postgres CI validation | CI currently tests Python only | Open |
+| Docker/Postgres CI validation | CI workflow now defines Postgres migration smoke | Partial |

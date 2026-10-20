@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import hmac
+import json
+import logging
 import os
 import re
+import time
 import uuid
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -19,11 +23,17 @@ from .digest import digest_facts, render_digest
 from .service import LedgerService
 
 app = FastAPI(title="BancaVoz")
+logger = logging.getLogger("bancavoz.request")
 STATIC_DIR = Path(__file__).parent / "web"
 service = LedgerService(
     Database(os.getenv("BANCAVOZ_DATABASE_URL", "sqlite:///./bancavoz.db")),
     os.getenv("BANCAVOZ_CURRENCY", "MZN"),
 )
+app.state.service = service
+app.state.bearer_token = os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token")
+app.state.merchant_id = os.getenv("BANCAVOZ_MERCHANT_ID", "merchant")
+app.state.rate_limit = int(os.getenv("BANCAVOZ_RATE_LIMIT", "120"))
+app.state.rate_events = defaultdict(deque)
 
 
 async def domain_error(_request: Request, exc: Exception):
@@ -38,11 +48,44 @@ for _error_type in (ValueError, KeyError, InvalidOperation):
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    started = time.perf_counter()
+    if request.url.path not in {"/healthz", "/readyz"}:
+        limit = int(getattr(request.app.state, "rate_limit", 120))
+        now = time.monotonic()
+        key = request.client.host if request.client else "unknown"
+        rate_events = getattr(request.app.state, "rate_events", app.state.rate_events)
+        events = rate_events[key]
+        while events and now - events[0] >= 60:
+            events.popleft()
+        if len(events) >= limit:
+            from fastapi.responses import JSONResponse
+            response = JSONResponse({"detail": "rate limit exceeded"}, status_code=429)
+            response.headers["Retry-After"] = "60"
+            response.headers["X-RateLimit-Limit"] = str(limit)
+            response.headers["X-RateLimit-Remaining"] = "0"
+            response.headers["X-Request-ID"] = request_id
+            return response
+        events.append(now)
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'"
-    response.headers["X-Request-ID"] = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'"
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-RateLimit-Limit"] = str(getattr(request.app.state, "rate_limit", 120))
+    rate_events = getattr(request.app.state, "rate_events", app.state.rate_events)
+    response.headers["X-RateLimit-Remaining"] = str(max(
+        0,
+        getattr(request.app.state, "rate_limit", 120)
+        - len(rate_events.get(request.client.host if request.client else "unknown", ())),
+    ))
+    logger.info(json.dumps({
+        "request_id": request_id,
+        "method": request.method,
+        "path": request.url.path,
+        "status": response.status_code,
+        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+    }))
     return response
 
 MCP_TOOLS = [
@@ -70,9 +113,15 @@ def auth(request: Request, authorization: Annotated[str | None, Header()] = None
         raise HTTPException(503, "production token is not configured")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "missing bearer token")
-    if not hmac.compare_digest(authorization.removeprefix("Bearer ").strip(), expected):
+    token = authorization.removeprefix("Bearer ").strip()
+    merchant_id = request.app.state.service.db.merchant_for_token(token)
+    if merchant_id:
+        return merchant_id
+    if os.getenv("BANCAVOZ_ENV", "development") == "production":
         raise HTTPException(401, "invalid bearer token")
-    return "merchant"
+    if not hmac.compare_digest(token, expected):
+        raise HTTPException(401, "invalid bearer token")
+    return request.app.state.merchant_id
 
 
 class Transaction(BaseModel):
@@ -100,6 +149,8 @@ def healthz() -> dict[str, str]:
 @app.get("/readyz")
 def readyz() -> dict[str, str]:
     service.db.connect()
+    if not service.db.postgres:
+        service.db.ensure_merchant("merchant", os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token"))
     return {"status": "ready"}
 
 
@@ -304,6 +355,11 @@ def create_app(settings: dict[str, str] | None = None) -> FastAPI:
     )
     app.state.service = service
     app.state.bearer_token = settings.get("bearer_token", os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token"))
+    app.state.merchant_id = settings.get("merchant_id", os.getenv("BANCAVOZ_MERCHANT_ID", "merchant"))
+    app.state.rate_limit = int(settings.get("rate_limit", os.getenv("BANCAVOZ_RATE_LIMIT", "120")))
+    app.state.rate_events = defaultdict(deque)
+    service.db.ensure_merchant(app.state.merchant_id, app.state.bearer_token)
+    service.db.ensure_merchant("demo", "demo-simulator")
     app.router.routes = [
         route for route in app.router.routes
         if not getattr(route, "path", "").startswith("/mcp")
@@ -318,7 +374,7 @@ def _mount_official_mcp() -> None:
 
     from .mcp_server import build_mcp
 
-    sdk_app = build_mcp(service, "merchant").streamable_http_app()
+    sdk_app = build_mcp(service, app.state.merchant_id).streamable_http_app()
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -329,9 +385,15 @@ def _mount_official_mcp() -> None:
 
     async def authenticated(scope: Scope, receive: Receive, send: Send) -> None:
         headers = {key.decode().lower(): value.decode() for key, value in scope.get("headers", [])}
-        expected = getattr(app.state, "bearer_token", os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token"))
         provided = headers.get("authorization", "").removeprefix("Bearer ").strip()
-        if not provided or not hmac.compare_digest(provided, expected):
+        merchant_id = service.db.merchant_for_token(provided) if provided else None
+        expected = getattr(app.state, "bearer_token", os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token"))
+        valid_fallback = (
+            os.getenv("BANCAVOZ_ENV", "development") != "production"
+            and bool(provided)
+            and hmac.compare_digest(provided, expected)
+        )
+        if not merchant_id and not valid_fallback:
             response = JSONResponse({"detail": "invalid bearer token"}, status_code=401)
             await response(scope, receive, send)
             return

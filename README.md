@@ -51,9 +51,9 @@ flowchart LR
   D --> B[Optional Bedrock narrative]
 ```
 
-The current repository is a local MVP. SQLite is supported for local/test use,
-and the pinned official MCP SDK is mounted at `/mcp`. Public deployment still
-requires validating PostgreSQL hosting, HTTPS, and the external smoke test.
+SQLite is supported for local/test use and PostgreSQL is the production backend.
+The pinned official MCP SDK is mounted at `/mcp` and `/mcp/`. The repository
+includes `render.yaml` for a managed PostgreSQL deployment.
 
 ## Authentication
 
@@ -63,7 +63,9 @@ requires validating PostgreSQL hosting, HTTPS, and the external smoke test.
 Authorization: Bearer $BANCAVOZ_BEARER_TOKEN
 ```
 
-The default development token is `dev-token`; replace it before deployment.
+The default development token is `dev-token`; production refuses to start with
+that value. Production startup applies the schema, creates the configured
+merchant token hash, and exposes `/readyz` only after the database is reachable.
 
 ## Endpoints and tools
 
@@ -107,9 +109,28 @@ PostgreSQL and external HTTPS smoke testing remain unverified.
 docker compose up --build
 ```
 
-The compose file includes a health-checked PostgreSQL service, but the current
-application adapter still supports SQLite only. Do not put real credentials in
-`.env` files committed to Git; use the hosting provider's secret store.
+The compose file includes a health-checked PostgreSQL service and the image runs
+`bancavoz-migrate` before Uvicorn. Do not put real credentials in `.env` files
+committed to Git; use the hosting provider's secret store.
+
+## Production deployment
+
+Render is the supported deployment path:
+
+```bash
+render blueprint launch
+```
+
+Set a strong random `BANCAVOZ_BEARER_TOKEN`, then verify:
+
+```bash
+curl -fsS https://<service>.onrender.com/healthz
+curl -fsS https://<service>.onrender.com/readyz
+curl -fsS -H "Authorization: Bearer $BANCAVOZ_BEARER_TOKEN" \
+  https://<service>.onrender.com/summary
+```
+
+Record the actual URL and raw command output in `docs/RUNBOOK.md`.
 
 ## Live URL
 

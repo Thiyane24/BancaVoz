@@ -31,6 +31,7 @@ dev = [
 
 [project.scripts]
 bancavoz-seed = "bancavoz.seed:main"
+bancavoz-migrate = "bancavoz.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

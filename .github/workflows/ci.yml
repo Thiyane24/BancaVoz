@@ -7,6 +7,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bancavoz
+          POSTGRES_USER: bancavoz
+          POSTGRES_PASSWORD: bancavoz
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bancavoz -d bancavoz"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,3 +31,11 @@ jobs:
       - run: python -m pytest -q
       - run: python -m compileall -q bancavoz
       - run: python -m ruff check bancavoz tests
+      - run: python -m mypy bancavoz
+      - run: python -m bandit -q -r bancavoz
+      - run: python -m pip_audit
+      - run: python -m bancavoz.cli
+        env:
+          BANCAVOZ_DATABASE_URL: postgresql://bancavoz:bancavoz@localhost:5432/bancavoz
+          BANCAVOZ_BEARER_TOKEN: ci-token
+          BANCAVOZ_MERCHANT_ID: ci-merchant

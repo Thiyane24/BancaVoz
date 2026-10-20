@@ -63,6 +63,7 @@ class LedgerService:
             "metadata": metadata,
             "reversed_entry_id": reversed_entry_id,
         })
+        self.db.ensure_merchant(merchant_id, f"service:{merchant_id}")
         with self.db.transaction() as conn:
             existing = conn.execute(
                 "SELECT * FROM ledger_entries WHERE merchant_id=? AND idempotency_key=?",
@@ -71,15 +72,15 @@ class LedgerService:
                 if request_hash and existing["request_hash"] and existing["request_hash"] != request_hash:
                     raise ValueError("idempotency key already used for a different request")
                 return self._row(existing)
-            cur = conn.execute(
+            row = conn.execute(
                 """INSERT INTO ledger_entries
                 (merchant_id,idempotency_key,entry_type,amount_minor,currency,description,party,
                  quantity,unit_price_minor,product,metadata_json,reversed_entry_id,request_hash)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
                 (merchant_id, idempotency_key, entry_type, amount_minor, self.currency, description, party,
                  quantity, unit_price_minor, product, json.dumps(metadata), reversed_entry_id, request_hash),
-            )
-            return self._row(conn.execute("SELECT * FROM ledger_entries WHERE id=?", (cur.lastrowid,)).fetchone())
+            ).fetchone()
+            return self._row(conn.execute("SELECT * FROM ledger_entries WHERE id=?", (row["id"],)).fetchone())
 
     def sale(self, merchant_id: str, amount: float | str | Decimal | None = None, *, idempotency_key: str,
              product: str | None = None, quantity: int = 1, party: str | None = None,
@@ -266,12 +267,13 @@ class LedgerService:
             raise ValueError("stock values must be non-negative")
         product = " ".join(product.split()).strip()
         with self.db.transaction() as conn:
-            sold = conn.execute(
+            sold_row = conn.execute(
                 """SELECT COALESCE(SUM(CASE WHEN entry_type='sale' THEN quantity
                     WHEN entry_type='undo' THEN -quantity ELSE 0 END), 0)
-                   FROM ledger_entries WHERE merchant_id=? AND product=?""",
+                   AS sold_total FROM ledger_entries WHERE merchant_id=? AND product=?""",
                 (merchant_id, product),
-            ).fetchone()[0]
+            ).fetchone()
+            sold = sold_row["sold_total"]
             conn.execute("""INSERT INTO stock_levels(merchant_id,product,quantity,low_stock_threshold,sold_baseline)
                 VALUES(?,?,?,?,?) ON CONFLICT(merchant_id,product) DO UPDATE SET
                 quantity=excluded.quantity, low_stock_threshold=excluded.low_stock_threshold,

@@ -57,6 +57,15 @@ def test_security_headers_and_readyz(isolated_app):
     assert TestClient(isolated_app).get("/readyz").status_code == 200
 
 
+def test_authenticated_requests_emit_request_id_and_rate_limit_headers(isolated_app):
+    client = TestClient(isolated_app)
+    response = client.get("/summary", headers={"Authorization": f"Bearer {isolated_app.state.bearer_token}"})
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"]
+    assert response.headers["X-RateLimit-Limit"]
+    assert response.headers["X-RateLimit-Remaining"]
+
+
 def test_static_pages_and_assets(isolated_app):
     client = TestClient(isolated_app)
     for path in ("/", "/app", "/sim"):
