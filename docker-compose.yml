@@ -1,10 +1,32 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bancavoz
+      POSTGRES_USER: bancavoz
+      POSTGRES_PASSWORD: bancavoz-local-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bancavoz -d bancavoz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
   bancavoz:
     build: .
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      BANCAVOZ_DATABASE_URL: postgresql://bancavoz:bancavoz-local-only@postgres:5432/bancavoz
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - bancavoz-data:/app/data
 volumes:
