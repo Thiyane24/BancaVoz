@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import os
 import json
+import os
 from functools import lru_cache
 from typing import Any
 
 
 def _minor(value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError("digest facts must contain integer minor-unit values")
+        raise TypeError("digest facts must contain integer minor-unit values")
     return value
 
 

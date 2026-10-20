@@ -46,10 +46,9 @@ flowchart LR
   D --> B[Optional Bedrock narrative]
 ```
 
-The current repository is a local MVP. SQLite is supported for local/test use.
-The checked-in PostgreSQL schema and SDK extra document the production direction,
-but public deployment still requires validating a PostgreSQL adapter and the
-official MCP Streamable HTTP transport.
+The current repository is a local MVP. SQLite is supported for local/test use,
+and the pinned official MCP SDK is mounted at `/mcp`. Public deployment still
+requires validating PostgreSQL hosting, HTTPS, and the external smoke test.
 
 ## Authentication
 
@@ -74,7 +73,7 @@ The default development token is `dev-token`; replace it before deployment.
 | `GET /summary` | Return ledger facts and a digest |
 | `GET /stock` / `POST /stock` | Show or set stock levels; `?low_stock=true` filters alerts |
 | `GET /top-sellers` | Rank items by quantity, optionally `?day=YYYY-MM-DD&timezone=...` |
-| `POST /mcp` | JSON-RPC `tools/list` and `tools/call` smoke surface |
+| `POST /mcp` | Official MCP SDK Streamable HTTP tools |
 | `GET /sim` | Browser simulator with microphone fallback |
 | `POST /sim/utterance` | Deterministic simulator command endpoint |
 

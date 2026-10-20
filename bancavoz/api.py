@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -52,7 +53,7 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/mcp")
+@app.post("/mcp-legacy")
 async def mcp_endpoint(request: Request, merchant: str = Depends(auth)):
     """Small JSON-RPC MCP surface; the optional official SDK can replace this in deployment."""
     message = await request.json()
@@ -242,3 +243,36 @@ async def simulator_post(request: Request):
 
 def create_app() -> FastAPI:
     return app
+
+
+def _mount_official_mcp() -> None:
+    try:
+        from starlette.types import Receive, Scope, Send
+
+        from .mcp_server import build_mcp
+    except ImportError:
+        return
+
+    sdk_app = build_mcp(service, "merchant").streamable_http_app()
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        async with sdk_app.router.lifespan_context(sdk_app):
+            yield
+
+    app.router.lifespan_context = lifespan
+
+    async def authenticated(scope: Scope, receive: Receive, send: Send) -> None:
+        headers = {key.decode().lower(): value.decode() for key, value in scope.get("headers", [])}
+        expected = os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token")
+        if headers.get("authorization") != f"Bearer {expected}":
+            from starlette.responses import JSONResponse
+            response = JSONResponse({"detail": "invalid bearer token"}, status_code=401)
+            await response(scope, receive, send)
+            return
+        await sdk_app(scope, receive, send)
+
+    app.mount("/mcp", authenticated)
+
+
+_mount_official_mcp()

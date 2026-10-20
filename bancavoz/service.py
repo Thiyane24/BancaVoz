@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import unicodedata
 from collections import defaultdict
-from datetime import date, datetime, time, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import UTC, date, datetime, time
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -13,7 +13,7 @@ from .db import Database
 from .models import Entry
 
 
-def to_minor(amount: int | float | str | Decimal, exponent: int = 2) -> int:
+def to_minor(amount: float | str | Decimal, exponent: int = 2) -> int:
     value = Decimal(str(amount)).quantize(Decimal(1).scaleb(-exponent), rounding=ROUND_HALF_UP)
     return int(value * (10**exponent))
 
@@ -67,10 +67,10 @@ class LedgerService:
             )
             return self._row(conn.execute("SELECT * FROM ledger_entries WHERE id=?", (cur.lastrowid,)).fetchone())
 
-    def sale(self, merchant_id: str, amount: int | float | str | None = None, *, idempotency_key: str,
+    def sale(self, merchant_id: str, amount: float | str | None = None, *, idempotency_key: str,
              product: str | None = None, quantity: int = 1, party: str | None = None,
-             description: str = "Sale", unit_price: int | float | str | None = None,
-             amount_paid: int | float | str | None = None, customer: str | None = None) -> Entry:
+             description: str = "Sale", unit_price: float | str | None = None,
+             amount_paid: float | str | None = None, customer: str | None = None) -> Entry:
         if quantity < 1:
             raise ValueError("quantity must be at least 1")
         if unit_price is not None:
@@ -97,19 +97,19 @@ class LedgerService:
                            metadata=metadata, request_hash=request_hash)
         return entry
 
-    def expense(self, merchant_id: str, amount: int | float | str, *, idempotency_key: str,
+    def expense(self, merchant_id: str, amount: float | str, *, idempotency_key: str,
                 category: str = "expense", description: str = "Expense") -> Entry:
         return self.append(merchant_id, entry_type="expense", amount_minor=to_minor(amount),
                            idempotency_key=idempotency_key, product=category, description=description)
 
-    def credit(self, merchant_id: str, amount: int | float | str, *, idempotency_key: str,
+    def credit(self, merchant_id: str, amount: float | str, *, idempotency_key: str,
                party: str, description: str = "Credit") -> Entry:
         return self.append(merchant_id, entry_type="credit", amount_minor=to_minor(amount),
                            idempotency_key=idempotency_key, party=party.strip(), description=description,
                            request_hash=_request_hash({"type": "credit", "amount": to_minor(amount),
                                                        "party": normalize_customer(party)}))
 
-    def payment(self, merchant_id: str, amount: int | float | str, *, idempotency_key: str,
+    def payment(self, merchant_id: str, amount: float | str, *, idempotency_key: str,
                 party: str, description: str = "Payment received") -> Entry:
         key = normalize_customer(party)
         owed = self.credit_balances(merchant_id).get(key, 0)
@@ -178,14 +178,14 @@ class LedgerService:
             return None, None
         local_day = date.fromisoformat(day) if isinstance(day, str) else day
         if timezone_name.upper() in ("UTC", "Z"):
-            tz = timezone.utc
+            tz = UTC
         else:
             try:
                 tz = ZoneInfo(timezone_name)
             except ZoneInfoNotFoundError as exc:
                 raise ValueError(f"unknown timezone: {timezone_name}") from exc
-        start = datetime.combine(local_day, time.min, tzinfo=tz).astimezone(timezone.utc)
-        end = datetime.combine(local_day, time.max, tzinfo=tz).astimezone(timezone.utc)
+        start = datetime.combine(local_day, time.min, tzinfo=tz).astimezone(UTC)
+        end = datetime.combine(local_day, time.max, tzinfo=tz).astimezone(UTC)
         return start.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S")
 
     def summary(self, merchant_id: str, *, day: str | date | None = None,

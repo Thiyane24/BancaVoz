@@ -17,3 +17,30 @@ def test_simulator_utterance():
     response = TestClient(app).post("/sim/utterance", json={"utterance": "sold 2 rice at 10"})
     assert response.status_code == 200
     assert response.json()["tool_calls"][0]["tool"] == "log_sale"
+
+
+def test_official_mcp_tools_list():
+    headers = {"Authorization": "Bearer dev-token", "Accept": "application/json, text/event-stream"}
+    with TestClient(app) as client:
+        initialized = client.post(
+            "/mcp/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "pytest", "version": "1"},
+                },
+            },
+        )
+        assert initialized.status_code == 200
+        listed = client.post(
+            "/mcp/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        )
+        assert listed.status_code == 200
+        assert len(listed.json()["result"]["tools"]) == 10
