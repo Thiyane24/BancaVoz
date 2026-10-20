@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from collections.abc import Iterator
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ledger_entries (
@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     metadata_json TEXT NOT NULL DEFAULT '{}',
     reversed_entry_id INTEGER,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    request_hash TEXT,
     UNIQUE (merchant_id, idempotency_key),
     FOREIGN KEY (reversed_entry_id) REFERENCES ledger_entries(id)
 );
@@ -48,6 +49,16 @@ class Database:
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.executescript(SCHEMA)
+            columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(ledger_entries)").fetchall()}
+            if "request_hash" not in columns:
+                self._conn.execute("ALTER TABLE ledger_entries ADD COLUMN request_hash TEXT")
+            self._conn.execute("""CREATE TABLE IF NOT EXISTS stock_levels (
+                merchant_id TEXT NOT NULL,
+                product TEXT NOT NULL,
+                quantity INTEGER NOT NULL CHECK (quantity >= 0),
+                low_stock_threshold INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (merchant_id, product)
+            )""")
             self._conn.commit()
 
     @contextmanager

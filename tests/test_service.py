@@ -30,3 +30,36 @@ def test_top_sellers():
     ledger.sale("m", 10, idempotency_key="1", product="chai", quantity=2)
     ledger.sale("m", 10, idempotency_key="2", product="samosa", quantity=3)
     assert ledger.top_sellers("m")[0]["product"] == "samosa"
+
+
+def test_sale_unit_price_partial_credit_and_customer_normalization():
+    ledger = service()
+    entry = ledger.sale("m", unit_price="10.00", quantity=3, amount_paid="12",
+                        idempotency_key="partial", product="rice", customer="  MÁRIA   José ")
+    assert entry.amount_minor == 3000
+    assert entry.unit_price_minor == 1000
+    assert ledger.credit_balances("m")["maria jose"] == 1800
+    ledger.payment("m", "18", idempotency_key="payment", party="maria jose")
+    assert ledger.credit_balances("m")["maria jose"] == 0
+
+
+def test_idempotency_conflict_and_stock_low_stock():
+    ledger = service()
+    ledger.sale("m", unit_price=10, quantity=2, amount_paid=20,
+                idempotency_key="strict", product="rice")
+    try:
+        ledger.sale("m", unit_price=11, quantity=2, amount_paid=22,
+                    idempotency_key="strict", product="rice")
+    except ValueError as exc:
+        assert "different request" in str(exc)
+    else:
+        raise AssertionError("expected idempotency conflict")
+    ledger.set_stock("m", "rice", 3, low_stock_threshold=2)
+    assert ledger.stock("m")[0]["quantity"] == 1
+    assert ledger.stock("m", low_stock=True)[0]["product"] == "rice"
+
+
+def test_period_top_sellers():
+    ledger = service()
+    ledger.sale("m", 10, idempotency_key="today", product="rice", quantity=2)
+    assert ledger.top_sellers("m", day="2099-01-01") == []

@@ -4,7 +4,7 @@ import os
 import re
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -38,7 +38,9 @@ def auth(authorization: Annotated[str | None, Header()] = None) -> str:
 
 
 class Transaction(BaseModel):
-    amount: float
+    amount: float | None = None
+    unit_price: float | None = None
+    amount_paid: float | None = None
     idempotency_key: str = ""
     product: str | None = None
     quantity: int = 1
@@ -65,9 +67,10 @@ async def mcp_endpoint(request: Request, merchant: str = Depends(auth)):
     name, args = params.get("name"), params.get("arguments", {})
     try:
         if name == "log_sale":
-            entry = service.sale(merchant, args["unit_price"] * args.get("quantity", 1),
+            entry = service.sale(merchant, args.get("amount"),
                                  idempotency_key=args["idempotency_key"], product=args["item"],
-                                 quantity=args.get("quantity", 1), party=args.get("customer"))
+                                 quantity=args.get("quantity", 1), party=args.get("customer"),
+                                 unit_price=args.get("unit_price"), amount_paid=args.get("amount_paid"))
             result = {"speech": "Sale logged.", "data": entry.as_dict()}
         elif name == "log_expense":
             entry = service.expense(merchant, args["amount"], idempotency_key=args["idempotency_key"],
@@ -96,8 +99,12 @@ async def mcp_endpoint(request: Request, merchant: str = Depends(auth)):
 def sales(body: Transaction, merchant: str = Depends(auth)):
     if not body.idempotency_key:
         raise HTTPException(422, "idempotency_key is required")
-    return service.sale(merchant, body.amount, idempotency_key=body.idempotency_key,
-                        product=body.product, quantity=body.quantity, party=body.party).as_dict()
+    try:
+        return service.sale(merchant, body.amount, idempotency_key=body.idempotency_key,
+                            product=body.product, quantity=body.quantity, party=body.party,
+                            unit_price=body.unit_price, amount_paid=body.amount_paid).as_dict()
+    except ValueError as exc:
+        raise HTTPException(409 if "idempotency" in str(exc) else 422, str(exc))
 
 
 @app.post("/expenses")
@@ -134,19 +141,42 @@ def undo(merchant: str = Depends(auth)):
 
 
 @app.get("/summary")
-def summary(merchant: str = Depends(auth)):
-    facts = digest_facts(service.summary(merchant), service.top_sellers(merchant))
+def summary(day: str | None = Query(None), timezone: str = Query("UTC"),
+            merchant: str = Depends(auth)):
+    try:
+        facts = digest_facts(service.summary(merchant, day=day, timezone_name=timezone),
+                             service.top_sellers(merchant, day=day, timezone_name=timezone))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
     return facts | {"digest": bedrock_digest(facts, service.currency) or render_digest(facts, service.currency)}
 
 
 @app.get("/stock")
-def stock(merchant: str = Depends(auth)):
-    return service.stock(merchant)
+def stock(low_stock: bool = Query(False), merchant: str = Depends(auth)):
+    return service.stock(merchant, low_stock=low_stock)
+
+
+class StockUpdate(BaseModel):
+    product: str
+    quantity: int
+    low_stock_threshold: int = 0
+
+
+@app.post("/stock")
+def set_stock(body: StockUpdate, merchant: str = Depends(auth)):
+    try:
+        return service.set_stock(merchant, body.product, body.quantity, body.low_stock_threshold)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
 
 
 @app.get("/top-sellers")
-def top_sellers(merchant: str = Depends(auth)):
-    return service.top_sellers(merchant)
+def top_sellers(day: str | None = Query(None), timezone: str = Query("UTC"),
+                merchant: str = Depends(auth)):
+    try:
+        return service.top_sellers(merchant, day=day, timezone_name=timezone)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
 
 
 @app.get("/sim", response_class=HTMLResponse)
