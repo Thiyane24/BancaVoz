@@ -69,9 +69,11 @@ def test_idempotency_conflict_and_stock_low_stock():
         assert "different request" in str(exc)
     else:
         raise AssertionError("expected idempotency conflict")
-    ledger.set_stock("m", "rice", 3, low_stock_threshold=2)
-    assert ledger.stock("m")[0]["quantity"] == 1
+    ledger.set_stock("m", "rice", 3, low_stock_threshold=3)
+    assert ledger.stock("m")[0]["quantity"] == 3
     assert ledger.stock("m", low_stock=True)[0]["product"] == "rice"
+    ledger.set_stock("m", "rice", 10, low_stock_threshold=2)
+    assert ledger.stock("m")[0]["quantity"] == 10
 
 
 def test_period_top_sellers():

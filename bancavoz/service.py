@@ -267,10 +267,17 @@ class LedgerService:
             raise ValueError("stock values must be non-negative")
         product = " ".join(product.split()).strip()
         with self.db.transaction() as conn:
-            conn.execute("""INSERT INTO stock_levels(merchant_id,product,quantity,low_stock_threshold)
-                VALUES(?,?,?,?) ON CONFLICT(merchant_id,product) DO UPDATE SET
-                quantity=excluded.quantity, low_stock_threshold=excluded.low_stock_threshold""",
-                         (merchant_id, product, quantity, low_stock_threshold))
+            sold = conn.execute(
+                """SELECT COALESCE(SUM(CASE WHEN entry_type='sale' THEN quantity
+                    WHEN entry_type='undo' THEN -quantity ELSE 0 END), 0)
+                   FROM ledger_entries WHERE merchant_id=? AND product=?""",
+                (merchant_id, product),
+            ).fetchone()[0]
+            conn.execute("""INSERT INTO stock_levels(merchant_id,product,quantity,low_stock_threshold,sold_baseline)
+                VALUES(?,?,?,?,?) ON CONFLICT(merchant_id,product) DO UPDATE SET
+                quantity=excluded.quantity, low_stock_threshold=excluded.low_stock_threshold,
+                sold_baseline=excluded.sold_baseline""",
+                         (merchant_id, product, quantity, low_stock_threshold, sold))
         return {"product": product, "quantity": quantity, "low_stock_threshold": low_stock_threshold}
 
     def stock(self, merchant_id: str, *, low_stock: bool = False) -> list[dict[str, Any]]:
@@ -278,10 +285,10 @@ class LedgerService:
             rows = conn.execute(
                 """SELECT s.product, s.quantity, s.low_stock_threshold,
                 COALESCE(SUM(CASE WHEN e.entry_type='sale' THEN e.quantity
-                    WHEN e.entry_type='undo' THEN -e.quantity ELSE 0 END), 0) sold
+                    WHEN e.entry_type='undo' THEN -e.quantity ELSE 0 END), 0) - s.sold_baseline sold
                 FROM stock_levels s LEFT JOIN ledger_entries e
                 ON e.merchant_id=s.merchant_id AND e.product=s.product
-                WHERE s.merchant_id=? GROUP BY s.product, s.quantity, s.low_stock_threshold
+                WHERE s.merchant_id=? GROUP BY s.product, s.quantity, s.low_stock_threshold, s.sold_baseline
                 UNION ALL SELECT e.product, NULL, NULL,
                 SUM(CASE WHEN e.entry_type='sale' THEN e.quantity WHEN e.entry_type='undo' THEN -e.quantity ELSE 0 END)
                 FROM ledger_entries e WHERE e.merchant_id=? AND e.product IS NOT NULL

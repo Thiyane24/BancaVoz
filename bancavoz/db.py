@@ -57,8 +57,12 @@ class Database:
                 product TEXT NOT NULL,
                 quantity INTEGER NOT NULL CHECK (quantity >= 0),
                 low_stock_threshold INTEGER NOT NULL DEFAULT 0,
+                sold_baseline INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (merchant_id, product)
             )""")
+            stock_columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(stock_levels)").fetchall()}
+            if "sold_baseline" not in stock_columns:
+                self._conn.execute("ALTER TABLE stock_levels ADD COLUMN sold_baseline INTEGER NOT NULL DEFAULT 0")
             self._conn.commit()
 
     @contextmanager
