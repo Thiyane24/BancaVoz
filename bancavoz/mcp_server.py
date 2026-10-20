@@ -4,6 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from .service import LedgerService
+from .speech import money_minor, sale_logged
 
 
 def build_mcp(service: LedgerService, merchant_id: str = "merchant"):
@@ -26,7 +27,9 @@ def build_mcp(service: LedgerService, merchant_id: str = "merchant"):
         entry = service.sale(merchant_id, idempotency_key=idempotency_key, product=item,
                              quantity=quantity, unit_price=unit_price, customer=customer,
                              amount_paid=amount_paid)
-        return {"speech": "Sale logged.", "data": entry.as_dict()}
+        return {"speech": sale_logged(entry.amount_minor,
+                                      int(entry.metadata.get("amount_paid_minor", entry.amount_minor)),
+                                      entry.party, service.currency), "data": entry.as_dict()}
 
     @mcp.tool(description="Log an expense. Example: spent 200 on transport.")
     def log_expense(description: str, amount: Decimal | str, category: str = "other",
@@ -41,7 +44,8 @@ def build_mcp(service: LedgerService, merchant_id: str = "merchant"):
         if allow_overpay:
             raise ValueError("overpayment is disabled in this MVP")
         entry = service.payment(merchant_id, amount, idempotency_key=idempotency_key, party=customer)
-        return {"speech": f"{customer} payment recorded.", "data": entry.as_dict()}
+        return {"speech": f"Logged. {customer.strip().title()} paid {money_minor(entry.amount_minor, service.currency)}.",
+                "data": entry.as_dict()}
 
     @mcp.tool(description="List credit owed. Example: who owes me?")
     def get_credit_owed(customer: str | None = None) -> dict:
@@ -54,7 +58,9 @@ def build_mcp(service: LedgerService, merchant_id: str = "merchant"):
     @mcp.tool(description="Get today's summary. Example: how did today go?")
     def get_daily_summary(day: str | None = None) -> dict:
         data = service.summary(merchant_id, day=day, timezone_name="Africa/Maputo")
-        return {"speech": "Daily summary ready.", "data": data}
+        return {"speech": f"Today: {money_minor(data['sales'], service.currency)} sales, "
+                          f"{money_minor(data['expenses'], service.currency)} expenses.",
+                "data": data}
 
     @mcp.tool(description="Undo the last live entry. Example: undo that.")
     def undo_last_entry(idempotency_key: str = "") -> dict:
