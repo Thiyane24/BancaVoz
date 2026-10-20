@@ -31,7 +31,8 @@ class LedgerService:
     def append(self, merchant_id: str, *, entry_type: str, amount_minor: int, idempotency_key: str,
                description: str = "", party: str | None = None, quantity: int = 0,
                unit_price_minor: int | None = None, product: str | None = None,
-               metadata: dict[str, Any] | None = None) -> Entry:
+               metadata: dict[str, Any] | None = None,
+               reversed_entry_id: int | None = None) -> Entry:
         if amount_minor < 0:
             raise ValueError("amount_minor must be non-negative")
         with self.db.transaction() as conn:
@@ -43,10 +44,10 @@ class LedgerService:
             cur = conn.execute(
                 """INSERT INTO ledger_entries
                 (merchant_id,idempotency_key,entry_type,amount_minor,currency,description,party,
-                 quantity,unit_price_minor,product,metadata_json)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                 quantity,unit_price_minor,product,metadata_json,reversed_entry_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (merchant_id, idempotency_key, entry_type, amount_minor, self.currency, description, party,
-                 quantity, unit_price_minor, product, json.dumps(metadata or {})),
+                 quantity, unit_price_minor, product, json.dumps(metadata or {}), reversed_entry_id),
             )
             return self._row(conn.execute("SELECT * FROM ledger_entries WHERE id=?", (cur.lastrowid,)).fetchone())
 
@@ -70,8 +71,28 @@ class LedgerService:
 
     def payment(self, merchant_id: str, amount: int | float | str, *, idempotency_key: str,
                 party: str, description: str = "Payment received") -> Entry:
+        owed = self.credit_balances(merchant_id).get(party.strip().casefold(), 0)
+        amount_minor = to_minor(amount)
+        if amount_minor > owed:
+            raise ValueError(f"payment exceeds balance for {party}")
         return self.append(merchant_id, entry_type="payment", amount_minor=to_minor(amount),
                            idempotency_key=idempotency_key, party=party, description=description)
+
+    def credit_balances(self, merchant_id: str) -> dict[str, int]:
+        balances: dict[str, int] = {}
+        for entry in reversed(self.list_entries(merchant_id, limit=10000)):
+            if not entry.party or entry.entry_type not in ("credit", "payment"):
+                continue
+            key = entry.party.strip().casefold()
+            delta = entry.amount_minor if entry.entry_type == "credit" else -entry.amount_minor
+            balances[key] = max(0, balances.get(key, 0) + delta)
+        return balances
+
+    def undo_last(self, merchant_id: str, *, idempotency_key: str) -> Entry:
+        for entry in self.list_entries(merchant_id, limit=10000):
+            if entry.entry_type != "undo" and entry.reversed_entry_id is None:
+                return self.undo(merchant_id, entry.id, idempotency_key=idempotency_key)
+        raise KeyError("no live entries to undo")
 
     def undo(self, merchant_id: str, entry_id: int, *, idempotency_key: str) -> Entry:
         with self.db.transaction() as conn:
@@ -88,7 +109,8 @@ class LedgerService:
         return self.append(merchant_id, entry_type="undo", amount_minor=target["amount_minor"],
                            idempotency_key=idempotency_key, description=f"Undo entry {entry_id}",
                            party=target["party"], product=target["product"],
-                           metadata={"original_entry_id": entry_id})
+                           quantity=target["quantity"], unit_price_minor=target["unit_price_minor"],
+                           metadata={"original_entry_id": entry_id}, reversed_entry_id=entry_id)
 
     def list_entries(self, merchant_id: str, limit: int = 100) -> list[Entry]:
         with self.db.transaction() as conn:

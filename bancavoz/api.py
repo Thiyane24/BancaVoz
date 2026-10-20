@@ -75,6 +75,15 @@ async def mcp_endpoint(request: Request, merchant: str = Depends(auth)):
             result = {"speech": "Expense logged.", "data": entry.as_dict()}
         elif name == "get_daily_summary":
             result = {"speech": "Daily summary ready.", "data": service.summary(merchant)}
+        elif name == "get_credit_owed":
+            result = {"speech": "Credit balances ready.", "data": service.credit_balances(merchant)}
+        elif name == "undo_last_entry":
+            entry = service.undo_last(merchant, idempotency_key=args["idempotency_key"])
+            result = {"speech": "Last entry undone.", "data": entry.as_dict()}
+        elif name == "record_credit_payment":
+            entry = service.payment(merchant, args["amount"], idempotency_key=args["idempotency_key"],
+                                    party=args["customer"])
+            result = {"speech": "Payment recorded.", "data": entry.as_dict()}
         else:
             raise ValueError(f"unknown tool: {name}")
         return {"jsonrpc": "2.0", "id": request_id, "result": {"content": [{"type": "text", "text": result}]}}
@@ -117,6 +126,11 @@ def payments(body: Transaction, merchant: str = Depends(auth)):
         raise HTTPException(422, "idempotency_key is required")
     return service.payment(merchant, body.amount, idempotency_key=body.idempotency_key,
                            party=body.party).as_dict()
+
+
+@app.post("/undo")
+def undo(merchant: str = Depends(auth)):
+    return service.undo_last(merchant, idempotency_key=f"http-undo:{merchant}").as_dict()
 
 
 @app.get("/summary")
@@ -169,6 +183,18 @@ async def sim_utterance(body: dict[str, str]) -> dict:
         result = service.expense("demo", amount, idempotency_key=f"sim-expense:{text}")
         calls.append({"tool": "log_expense", "arguments": {"amount": amount}})
         return {"speech": "Expense logged.", "data": result.as_dict(), "tool_calls": calls}
+    if "paid" in lowered or "payment" in lowered:
+        payment_match = re.search(r"(?:paid|payment).*?([\d.]+)", lowered)
+        if payment_match:
+            amount = float(payment_match.group(1))
+            customer = "Maria"
+            result = service.payment("demo", amount, idempotency_key=f"sim-payment:{text}", party=customer)
+            calls.append({"tool": "record_credit_payment", "arguments": {"customer": customer, "amount": amount}})
+            return {"speech": f"{customer} payment recorded.", "data": result.as_dict(), "tool_calls": calls}
+    if "undo" in lowered or "oops" in lowered:
+        result = service.undo_last("demo", idempotency_key=f"sim-undo:{text}")
+        calls.append({"tool": "undo_last_entry", "arguments": {}})
+        return {"speech": "Last entry undone.", "data": result.as_dict(), "tool_calls": calls}
     if "summary" in lowered or "how did" in lowered:
         calls.append({"tool": "get_daily_summary", "arguments": {}})
         facts = digest_facts(service.summary("demo"), service.top_sellers("demo"))
