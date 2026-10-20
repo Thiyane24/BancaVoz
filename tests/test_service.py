@@ -123,8 +123,8 @@ def test_undo_balance_deltas_restore_payment_and_remove_credit():
 
 def test_summary_returns_live_business_totals_only():
     ledger = service()
-    sale = ledger.sale("m", unit_price="10", quantity=2, amount_paid="15",
-                       customer="Maria", product="rice", idempotency_key="summary-sale")
+    ledger.sale("m", unit_price="10", quantity=2, amount_paid="15",
+                customer="Maria", product="rice", idempotency_key="summary-sale")
     ledger.expense("m", "3", idempotency_key="summary-expense", category="transport")
     payment = ledger.payment("m", "2", party="Maria", idempotency_key="summary-payment")
     ledger.undo("m", payment.id, idempotency_key="summary-undo")

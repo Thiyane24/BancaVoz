@@ -3,11 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import unicodedata
-from uuid import uuid4
-from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .db import Database

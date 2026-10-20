@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import hmac
 import os
 import re
-import hmac
 import uuid
 from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
 from .db import Database
-from .digest import bedrock_digest, digest_facts, render_digest
+from .digest import digest_facts, render_digest
 from .service import LedgerService
 
 app = FastAPI(title="BancaVoz")
@@ -79,7 +79,7 @@ class Transaction(BaseModel):
     @classmethod
     def reject_float_amounts(cls, value):
         if isinstance(value, float):
-            raise ValueError("amounts must be decimal strings, not floats")
+            raise TypeError("amounts must be decimal strings, not floats")
         return value
 
 
