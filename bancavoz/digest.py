@@ -12,12 +12,23 @@ def _minor(value: Any) -> int:
     return value
 
 
-def digest_facts(summary: dict[str, Any], top_sellers: list[dict[str, Any]]) -> dict[str, Any]:
+def digest_facts(summary: dict[str, Any], top_sellers: list[dict[str, Any]],
+                 previous: dict[str, Any] | None = None) -> dict[str, Any]:
     sellers = []
     for seller in top_sellers:
         sellers.append({"product": str(seller.get("product", "")), "sold": _minor(seller.get("sold", 0))})
-    return {"net_minor": _minor(summary.get("net", 0)), "sales_minor": _minor(summary.get("sale", 0)),
-            "expenses_minor": _minor(summary.get("expense", 0)), "top_sellers": sellers}
+    facts = {
+        "net_minor": _minor(summary.get("profit", 0)),
+        "sales_minor": _minor(summary.get("sales", 0)),
+        "expenses_minor": _minor(summary.get("expenses", 0)),
+        "credit_given_minor": _minor(summary.get("credit_given", 0)),
+        "credit_collected_minor": _minor(summary.get("credit_collected", 0)),
+        "entry_count": _minor(summary.get("entry_count", 0)),
+        "top_sellers": sellers,
+    }
+    if previous is not None:
+        facts["previous"] = digest_facts(previous, [], None)
+    return facts
 
 
 @lru_cache(maxsize=256)
