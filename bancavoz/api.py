@@ -55,8 +55,8 @@ MCP_TOOLS = [
 ]
 
 
-def auth(authorization: Annotated[str | None, Header()] = None) -> str:
-    expected = os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token")
+def auth(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
+    expected = getattr(request.app.state, "bearer_token", os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token"))
     if os.getenv("BANCAVOZ_ENV", "development") == "production" and expected == "dev-token":
         raise HTTPException(503, "production token is not configured")
     if not authorization or not authorization.startswith("Bearer "):
@@ -92,49 +92,6 @@ def healthz() -> dict[str, str]:
 def readyz() -> dict[str, str]:
     service.db.connect()
     return {"status": "ready"}
-
-
-@app.post("/mcp-legacy")
-async def mcp_endpoint(request: Request, merchant: str = Depends(auth)):
-    """Small JSON-RPC MCP surface; the optional official SDK can replace this in deployment."""
-    message = await request.json()
-    method = message.get("method")
-    request_id = message.get("id")
-    if method == "tools/list":
-        return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": MCP_TOOLS}}
-    if method != "tools/call":
-        return {"jsonrpc": "2.0", "id": request_id,
-                "error": {"code": -32601, "message": "method not found"}}
-    params = message.get("params", {})
-    name, args = params.get("name"), params.get("arguments", {})
-    try:
-        if name == "log_sale":
-            entry = service.sale(merchant, args.get("amount"),
-                                 idempotency_key=args["idempotency_key"], product=args["item"],
-                                 quantity=args.get("quantity", 1), party=args.get("customer"),
-                                 unit_price=args.get("unit_price"), amount_paid=args.get("amount_paid"))
-            result = {"speech": "Sale logged.", "data": entry.as_dict()}
-        elif name == "log_expense":
-            entry = service.expense(merchant, args["amount"], idempotency_key=args["idempotency_key"],
-                                    category=args.get("category", "other"), description=args["description"])
-            result = {"speech": "Expense logged.", "data": entry.as_dict()}
-        elif name == "get_daily_summary":
-            result = {"speech": "Daily summary ready.", "data": service.summary(merchant)}
-        elif name == "get_credit_owed":
-            result = {"speech": "Credit balances ready.", "data": service.credit_balances(merchant)}
-        elif name == "undo_last_entry":
-            entry = service.undo_last(merchant, idempotency_key=args["idempotency_key"])
-            result = {"speech": "Last entry undone.", "data": entry.as_dict()}
-        elif name == "record_credit_payment":
-            entry = service.payment(merchant, args["amount"], idempotency_key=args["idempotency_key"],
-                                    party=args["customer"])
-            result = {"speech": "Payment recorded.", "data": entry.as_dict()}
-        else:
-            raise ValueError(f"unknown tool: {name}")
-        return {"jsonrpc": "2.0", "id": request_id, "result": {"content": [{"type": "text", "text": result}]}}
-    except (KeyError, ValueError) as exc:
-        return {"jsonrpc": "2.0", "id": request_id,
-                "error": {"code": -32602, "message": str(exc)}}
 
 
 @app.post("/sales")
@@ -267,17 +224,27 @@ async def sim_utterance(body: dict[str, str]) -> dict:
             "tool_calls": calls}
 
 
-def create_app() -> FastAPI:
+def create_app(settings: dict[str, str] | None = None) -> FastAPI:
+    global service
+    settings = settings or {}
+    service = LedgerService(
+        Database(settings.get("database_url", os.getenv("BANCAVOZ_DATABASE_URL", "sqlite:///./bancavoz.db"))),
+        settings.get("currency", os.getenv("BANCAVOZ_CURRENCY", "MZN")),
+    )
+    app.state.service = service
+    app.state.bearer_token = settings.get("bearer_token", os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token"))
+    app.router.routes = [
+        route for route in app.router.routes
+        if not getattr(route, "path", "").startswith("/mcp")
+    ]
+    _mount_official_mcp()
     return app
 
 
 def _mount_official_mcp() -> None:
-    try:
-        from starlette.types import Receive, Scope, Send
-
-        from .mcp_server import build_mcp
-    except ImportError:
-        return
+    from starlette.types import Receive, Scope, Send
+    from starlette.responses import JSONResponse
+    from .mcp_server import build_mcp
 
     sdk_app = build_mcp(service, "merchant").streamable_http_app()
 
@@ -290,15 +257,16 @@ def _mount_official_mcp() -> None:
 
     async def authenticated(scope: Scope, receive: Receive, send: Send) -> None:
         headers = {key.decode().lower(): value.decode() for key, value in scope.get("headers", [])}
-        expected = os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token")
-        if headers.get("authorization") != f"Bearer {expected}":
-            from starlette.responses import JSONResponse
+        expected = getattr(app.state, "bearer_token", os.getenv("BANCAVOZ_BEARER_TOKEN", "dev-token"))
+        provided = headers.get("authorization", "").removeprefix("Bearer ").strip()
+        if not provided or not hmac.compare_digest(provided, expected):
             response = JSONResponse({"detail": "invalid bearer token"}, status_code=401)
             await response(scope, receive, send)
             return
         await sdk_app(scope, receive, send)
 
     app.mount("/mcp", authenticated)
+    app.mount("/mcp/", authenticated)
 
 
 _mount_official_mcp()

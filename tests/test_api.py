@@ -99,3 +99,19 @@ def test_official_mcp_tools_list():
         )
         assert listed.status_code == 200
         assert len(listed.json()["result"]["tools"]) == 10
+
+
+def test_factory_isolates_database_and_mcp_paths_are_canonical():
+    from bancavoz.api import create_app
+
+    isolated = create_app({
+        "database_url": "sqlite:///:memory:",
+        "currency": "MZN",
+        "bearer_token": "factory-token",
+    })
+    with TestClient(isolated) as client:
+        assert client.get("/summary").status_code == 401
+        assert client.get("/summary", headers={"Authorization": "Bearer factory-token"}).status_code == 200
+        assert client.post("/mcp", headers={"Authorization": "Bearer factory-token"}).status_code != 307
+        assert client.post("/mcp-legacy", headers={"Authorization": "Bearer factory-token"}).status_code == 404
+        assert client.post("/simulator", data={"utterance": "hello"}).status_code == 405
