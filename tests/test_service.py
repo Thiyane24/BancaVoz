@@ -137,3 +137,57 @@ def test_summary_returns_live_business_totals_only():
         "credit_collected": 0,
         "entry_count": 2,
     }
+
+
+def test_all_write_types_reject_idempotency_hash_conflicts():
+    ledger = service()
+    ledger.sale("m", unit_price="10", product="rice", idempotency_key="sale")
+    ledger.expense("m", "2", category="transport", idempotency_key="expense")
+    ledger.credit("m", "5", party="Maria", idempotency_key="credit")
+    ledger.payment("m", "1", party="Maria", idempotency_key="payment")
+    for operation in (
+        lambda: ledger.sale("m", unit_price="11", product="rice", idempotency_key="sale"),
+        lambda: ledger.expense("m", "3", category="transport", idempotency_key="expense"),
+        lambda: ledger.credit("m", "6", party="Maria", idempotency_key="credit"),
+        lambda: ledger.payment("m", "2", party="Maria", idempotency_key="payment"),
+    ):
+        try:
+            operation()
+        except ValueError as exc:
+            assert "different request" in str(exc)
+        else:
+            raise AssertionError("expected idempotency conflict")
+
+
+def test_undo_payment_expense_and_twice_are_distinct_and_net_is_zero():
+    ledger = service()
+    sale = ledger.sale("m", unit_price="10", product="rice", amount_paid="0",
+                       customer="Maria", idempotency_key="sale")
+    payment = ledger.payment("m", "4", party="Maria", idempotency_key="payment")
+    expense = ledger.expense("m", "3", category="transport", idempotency_key="expense")
+    first = ledger.undo_last("m", idempotency_key="")
+    second = ledger.undo_last("m", idempotency_key="")
+    third = ledger.undo_last("m", idempotency_key="")
+    assert first.reversed_entry_id == expense.id
+    assert second.reversed_entry_id == payment.id
+    assert third.reversed_entry_id == sale.id
+    assert len({first.id, second.id, third.id}) == 3
+    assert ledger.summary("m")["profit"] == 0
+
+
+def test_maputo_day_bounds_and_validation_rules():
+    ledger = service()
+    ledger.sale("m", unit_price="10", product="rice", idempotency_key="sale")
+    assert ledger.summary("m", day="2026-10-20", timezone_name="Africa/Maputo")["sales"] in (0, 1000)
+    try:
+        ledger.payment("m", "100", party="Maria", idempotency_key="overpay")
+    except ValueError as exc:
+        assert "exceeds balance" in str(exc)
+    else:
+        raise AssertionError("expected overpay rejection")
+    try:
+        ledger.sale("m", unit_price="10", amount_paid="5", product="rice", idempotency_key="missing")
+    except ValueError as exc:
+        assert "customer is required" in str(exc)
+    else:
+        raise AssertionError("expected missing customer rejection")

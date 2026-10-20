@@ -53,6 +53,7 @@ MCP_TOOLS = [
     {"name": "get_daily_summary", "description": "Summarize the ledger.", "inputSchema": {"type": "object"}},
     {"name": "undo_last_entry", "description": "Reverse a ledger entry.", "inputSchema": {"type": "object"}},
 ]
+_demo_sale_context: dict[str, dict[str, object]] = {}
 
 
 def auth(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
@@ -121,8 +122,11 @@ def credits(body: Transaction, merchant: str = Depends(auth)):
         raise HTTPException(422, "amount is required")
     if not body.party:
         raise HTTPException(422, "party is required")
-    return service.credit(merchant, body.amount, idempotency_key=body.idempotency_key,
-                          party=body.party).as_dict()
+    try:
+        return service.credit(merchant, body.amount, idempotency_key=body.idempotency_key,
+                              party=body.party).as_dict()
+    except ValueError as exc:
+        raise HTTPException(409 if "different request" in str(exc) else 422, str(exc))
 
 
 @app.post("/payments")
@@ -131,8 +135,11 @@ def payments(body: Transaction, merchant: str = Depends(auth)):
         raise HTTPException(422, "amount is required")
     if not body.party:
         raise HTTPException(422, "party is required")
-    return service.payment(merchant, body.amount, idempotency_key=body.idempotency_key,
-                           party=body.party).as_dict()
+    try:
+        return service.payment(merchant, body.amount, idempotency_key=body.idempotency_key,
+                               party=body.party).as_dict()
+    except ValueError as exc:
+        raise HTTPException(409 if "different request" in str(exc) else 422, str(exc))
 
 
 @app.post("/undo")
@@ -208,14 +215,37 @@ def _parse_command(text: str, merchant: str) -> dict:
         quantity, item, price = int(sale_match.group(1)), sale_match.group(2).strip(), float(sale_match.group(3))
         result = service.sale(merchant, unit_price=price, idempotency_key=f"sim-sale:{text}",
                               product=item, quantity=quantity)
+        _demo_sale_context[merchant] = {
+            "entry_id": result.id, "item": item, "quantity": quantity, "unit_price": Decimal(sale_match.group(3))
+        }
         calls.append({"tool": "log_sale", "arguments": {"item": item, "quantity": quantity,
                                                          "unit_price": price}})
         return {"speech": f"Logged {quantity} {item}.", "data": result.as_dict(), "tool_calls": calls}
+    owes_match = re.search(r"^(.+?)\s+owes\s+half$", lowered)
+    if owes_match and merchant in _demo_sale_context:
+        context = _demo_sale_context[merchant]
+        customer = owes_match.group(1).strip().title()
+        service.undo(merchant, int(context["entry_id"]), idempotency_key=f"sim-revise:{text}")
+        result = service.sale(
+            merchant,
+            unit_price=context["unit_price"],
+            quantity=int(context["quantity"]),
+            customer=customer,
+            amount_paid=(context["unit_price"] * int(context["quantity"])) / 2,
+            idempotency_key=f"sim-sale-credit:{text}",
+            product=str(context["item"]),
+        )
+        calls.append({"tool": "log_sale", "arguments": {"item": context["item"], "quantity": context["quantity"],
+                                                         "unit_price": context["unit_price"], "customer": customer,
+                                                         "amount_paid": (context["unit_price"] * int(context["quantity"])) / 2}})
+        return {"speech": f"{customer} owes half.", "data": result.as_dict(), "tool_calls": calls}
     expense_match = re.search(r"(?:spent|expense).*?([\d.]+)", lowered)
     if expense_match:
         amount = Decimal(expense_match.group(1))
-        result = service.expense(merchant, amount, idempotency_key=f"sim-expense:{text}")
-        calls.append({"tool": "log_expense", "arguments": {"amount": amount}})
+        category_match = re.search(r"\bon\s+(.+)$", lowered)
+        category = category_match.group(1).strip() if category_match else "expense"
+        result = service.expense(merchant, amount, idempotency_key=f"sim-expense:{text}", category=category)
+        calls.append({"tool": "log_expense", "arguments": {"amount": amount, "category": category}})
         return {"speech": "Expense logged.", "data": result.as_dict(), "tool_calls": calls}
     if "paid" in lowered or "payment" in lowered:
         payment_match = re.search(r"(?:paid|payment).*?([\d.]+)", lowered)
@@ -231,6 +261,10 @@ def _parse_command(text: str, merchant: str) -> dict:
         return {"speech": "Last entry undone.", "data": result.as_dict(), "tool_calls": calls}
     if "summary" in lowered or "how did" in lowered:
         calls.append({"tool": "get_daily_summary", "arguments": {}})
+        facts = digest_facts(service.summary(merchant), service.top_sellers(merchant))
+        return {"speech": render_digest(facts, service.currency), "data": facts, "tool_calls": calls}
+    if "digest" in lowered:
+        calls.append({"tool": "get_daily_digest", "arguments": {}})
         facts = digest_facts(service.summary(merchant), service.top_sellers(merchant))
         return {"speech": render_digest(facts, service.currency), "data": facts, "tool_calls": calls}
     return {"speech": "Try saying sold, spent, or summary.", "data": {"needs_clarification": True},
@@ -271,8 +305,9 @@ def create_app(settings: dict[str, str] | None = None) -> FastAPI:
 
 
 def _mount_official_mcp() -> None:
-    from starlette.types import Receive, Scope, Send
     from starlette.responses import JSONResponse
+    from starlette.types import Receive, Scope, Send
+
     from .mcp_server import build_mcp
 
     sdk_app = build_mcp(service, "merchant").streamable_http_app()

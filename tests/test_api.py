@@ -1,8 +1,21 @@
-from fastapi.testclient import TestClient
+import asyncio
 import tomllib
 from pathlib import Path
 
-from bancavoz.api import app
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+
+from bancavoz.api import create_app
+
+
+@pytest.fixture
+def isolated_app(tmp_path):
+    return create_app({
+        "database_url": f"sqlite:///{tmp_path / 'test.db'}",
+        "currency": "MZN",
+        "bearer_token": "dev-token",
+    })
 
 
 def test_project_metadata_packages_web_and_runtime_dependencies():
@@ -33,33 +46,33 @@ def test_project_metadata_packages_web_and_runtime_dependencies():
     ]
 
 
-def test_healthz():
-    assert TestClient(app).get("/healthz").json() == {"status": "ok"}
+def test_healthz(isolated_app):
+    assert TestClient(isolated_app).get("/healthz").json() == {"status": "ok"}
 
 
-def test_security_headers_and_readyz():
-    response = TestClient(app).get("/healthz")
+def test_security_headers_and_readyz(isolated_app):
+    response = TestClient(isolated_app).get("/healthz")
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["Content-Security-Policy"]
-    assert TestClient(app).get("/readyz").status_code == 200
+    assert TestClient(isolated_app).get("/readyz").status_code == 200
 
 
-def test_static_pages_and_assets():
-    client = TestClient(app)
+def test_static_pages_and_assets(isolated_app):
+    client = TestClient(isolated_app)
     for path in ("/", "/app", "/sim"):
         response = client.get(path)
         assert response.status_code == 200
         assert "<!doctype html>" in response.text.lower()
 
 
-def test_bearer_auth():
-    client = TestClient(app)
+def test_bearer_auth(isolated_app):
+    client = TestClient(isolated_app)
     assert client.get("/summary").status_code == 401
     assert client.get("/summary", headers={"Authorization": "Bearer dev-token"}).status_code == 200
 
 
-def test_http_generates_empty_idempotency_key():
-    response = TestClient(app).post(
+def test_http_generates_empty_idempotency_key(isolated_app):
+    response = TestClient(isolated_app).post(
         "/expenses",
         headers={"Authorization": "Bearer dev-token"},
         json={"amount": "10", "idempotency_key": ""},
@@ -68,15 +81,15 @@ def test_http_generates_empty_idempotency_key():
     assert response.json()["idempotency_key"]
 
 
-def test_simulator_utterance():
-    response = TestClient(app).post("/sim/utterance", json={"utterance": "sold 2 rice at 10"})
+def test_simulator_utterance(isolated_app):
+    response = TestClient(isolated_app).post("/sim/utterance", json={"utterance": "sold 2 rice at 10"})
     assert response.status_code == 200
     assert response.json()["tool_calls"][0]["tool"] == "log_sale"
 
 
-def test_official_mcp_tools_list():
+def test_official_mcp_tools_list(isolated_app):
     headers = {"Authorization": "Bearer dev-token", "Accept": "application/json, text/event-stream"}
-    with TestClient(app) as client:
+    with TestClient(isolated_app) as client:
         initialized = client.post(
             "/mcp/",
             headers=headers,
@@ -140,3 +153,95 @@ def test_entries_credits_and_command_are_authenticated_and_console_wired():
     assert 'api("/credits")' in app_js
     assert 'api("/command"' in app_js
     assert "Recent entries" in app_html
+
+
+def test_http_idempotency_conflict_is_409_for_all_write_routes():
+    from bancavoz.api import create_app
+
+    isolated = create_app({
+        "database_url": "sqlite:///:memory:",
+        "currency": "MZN",
+        "bearer_token": "factory-token",
+    })
+    headers = {"Authorization": "Bearer factory-token"}
+    with TestClient(isolated) as client:
+        writes = [
+            ("/sales", {"unit_price": "10", "product": "rice", "idempotency_key": "same"}),
+            ("/expenses", {"amount": "2", "product": "transport", "idempotency_key": "same-expense"}),
+            ("/credits", {"amount": "5", "party": "Maria", "idempotency_key": "same-credit"}),
+            ("/payments", {"amount": "1", "party": "Maria", "idempotency_key": "same-payment"}),
+        ]
+        for path, payload in writes:
+            assert client.post(path, headers=headers, json=payload).status_code == 200
+            changed = dict(payload)
+            if path == "/sales":
+                changed["unit_price"] = "99"
+            elif path == "/payments":
+                changed["amount"] = "2"
+            else:
+                changed["amount"] = "99"
+            assert client.post(path, headers=headers, json=changed).status_code == 409
+
+
+def test_six_demo_utterances_are_handled_without_server_errors():
+    from bancavoz.api import create_app
+
+    isolated = create_app({"database_url": "sqlite:///:memory:", "bearer_token": "factory-token"})
+    with TestClient(isolated) as client:
+        utterances = [
+            "sold 2 rice at 10",
+            "Maria owes half",
+            "Maria paid 10",
+            "undo that",
+            "spent 200 on transport",
+            "how did today go",
+            "end of day digest",
+        ]
+        for utterance in utterances:
+            response = client.post("/sim/utterance", json={"utterance": utterance})
+            assert response.status_code == 200
+            assert response.json()["speech"]
+        assert client.post("/sim/utterance", json={"utterance": "Maria owes half"}).json()["tool_calls"][0]["tool"] == "log_sale"
+        assert client.post("/sim/utterance", json={"utterance": "spent 200 on transport"}).json()["data"]["product"] == "transport"
+        assert client.post("/sim/utterance", json={"utterance": "end of day digest"}).json()["tool_calls"][0]["tool"] == "get_daily_digest"
+
+
+def test_real_mcp_client_can_call_tools_on_both_mcp_paths():
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    from bancavoz.api import create_app
+
+    isolated = create_app({"database_url": "sqlite:///:memory:", "bearer_token": "factory-token"})
+
+    async def exercise(path: str):
+        async with isolated.router.lifespan_context(isolated):
+            transport = httpx.ASGITransport(app=isolated)
+            async with (
+                httpx.AsyncClient(transport=transport, base_url="http://testserver",
+                                  headers={"Authorization": "Bearer factory-token"}) as client,
+                streamable_http_client(f"http://testserver{path}", http_client=client) as streams,
+                ClientSession(*streams[:2]) as session,
+            ):
+                        await session.initialize()
+                        result = await session.call_tool("check_low_stock", {})
+                        assert result is not None
+
+    async def both():
+        async with isolated.router.lifespan_context(isolated):
+            await exercise_with_lifespan("/mcp")
+            await exercise_with_lifespan("/mcp/")
+
+    async def exercise_with_lifespan(path: str):
+        transport = httpx.ASGITransport(app=isolated)
+        async with (
+            httpx.AsyncClient(transport=transport, base_url="http://testserver",
+                              headers={"Authorization": "Bearer factory-token"}) as client,
+            streamable_http_client(f"http://testserver{path}", http_client=client) as streams,
+            ClientSession(*streams[:2]) as session,
+        ):
+                    await session.initialize()
+                    result = await session.call_tool("check_low_stock", {})
+                    assert result is not None
+
+    asyncio.run(both())
