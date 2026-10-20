@@ -14,7 +14,7 @@ are append-only; and the deterministic simulator works without AWS credentials.
 ### PowerShell
 
 ```powershell
-py -m venv .venv
+py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -e ".[dev]"
 $env:BANCAVOZ_BEARER_TOKEN = "change-me"
 uvicorn bancavoz.api:app --reload
@@ -23,7 +23,7 @@ uvicorn bancavoz.api:app --reload
 ### Bash
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 . .venv/bin/activate
 pip install -e '.[dev]'
 export BANCAVOZ_BEARER_TOKEN='change-me'

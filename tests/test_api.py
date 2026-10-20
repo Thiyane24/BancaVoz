@@ -21,6 +21,7 @@ def isolated_app(tmp_path):
 def test_project_metadata_packages_web_and_runtime_dependencies():
     metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     project = metadata["project"]
+    assert project["requires-python"] == ">=3.12,<3.15"
     assert project["dependencies"] == [
         "fastapi==0.150.0",
         "uvicorn==0.54.0",

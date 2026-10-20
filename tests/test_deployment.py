@@ -60,4 +60,4 @@ def test_readme_matches_current_verified_surface():
     assert "`POST /command`" in readme
     assert "Live URL: not deployed" in readme
     assert "## Screenshots" in readme
-    assert "31 passed" in readme
+    assert "36 passed" in readme
