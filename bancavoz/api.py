@@ -3,13 +3,14 @@ from __future__ import annotations
 import os
 import re
 from contextlib import asynccontextmanager
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from .db import Database
 from .digest import bedrock_digest, digest_facts, render_digest
@@ -21,6 +22,16 @@ service = LedgerService(
     Database(os.getenv("BANCAVOZ_DATABASE_URL", "sqlite:///./bancavoz.db")),
     os.getenv("BANCAVOZ_CURRENCY", "MZN"),
 )
+
+
+async def domain_error(_request: Request, exc: Exception):
+    return __import__("fastapi").responses.JSONResponse(
+        {"detail": str(exc)}, status_code=422
+    )
+
+
+for _error_type in (ValueError, KeyError, InvalidOperation):
+    app.add_exception_handler(_error_type, domain_error)
 
 MCP_TOOLS = [
     {"name": "log_sale", "description": "Log a sale.", "inputSchema": {"type": "object"}},
@@ -42,13 +53,20 @@ def auth(authorization: Annotated[str | None, Header()] = None) -> str:
 
 
 class Transaction(BaseModel):
-    amount: float | None = None
-    unit_price: float | None = None
-    amount_paid: float | None = None
+    amount: Decimal | None = None
+    unit_price: Decimal | None = None
+    amount_paid: Decimal | None = None
     idempotency_key: str = ""
     product: str | None = None
     quantity: int = 1
     party: str | None = None
+
+    @field_validator("amount", "unit_price", "amount_paid", mode="before")
+    @classmethod
+    def reject_float_amounts(cls, value):
+        if isinstance(value, float):
+            raise ValueError("amounts must be decimal strings, not floats")
+        return value
 
 
 @app.get("/healthz")
@@ -101,8 +119,6 @@ async def mcp_endpoint(request: Request, merchant: str = Depends(auth)):
 
 @app.post("/sales")
 def sales(body: Transaction, merchant: str = Depends(auth)):
-    if not body.idempotency_key:
-        raise HTTPException(422, "idempotency_key is required")
     try:
         return service.sale(merchant, body.amount, idempotency_key=body.idempotency_key,
                             product=body.product, quantity=body.quantity, party=body.party,
@@ -124,8 +140,6 @@ def expenses(body: Transaction, merchant: str = Depends(auth)):
 def credits(body: Transaction, merchant: str = Depends(auth)):
     if not body.party:
         raise HTTPException(422, "party is required")
-    if not body.idempotency_key:
-        raise HTTPException(422, "idempotency_key is required")
     return service.credit(merchant, body.amount, idempotency_key=body.idempotency_key,
                           party=body.party).as_dict()
 
@@ -134,15 +148,13 @@ def credits(body: Transaction, merchant: str = Depends(auth)):
 def payments(body: Transaction, merchant: str = Depends(auth)):
     if not body.party:
         raise HTTPException(422, "party is required")
-    if not body.idempotency_key:
-        raise HTTPException(422, "idempotency_key is required")
     return service.payment(merchant, body.amount, idempotency_key=body.idempotency_key,
                            party=body.party).as_dict()
 
 
 @app.post("/undo")
 def undo(merchant: str = Depends(auth)):
-    return service.undo_last(merchant, idempotency_key=f"http-undo:{merchant}").as_dict()
+    return service.undo_last(merchant, idempotency_key="").as_dict()
 
 
 @app.get("/summary")
@@ -153,7 +165,7 @@ def summary(day: str | None = Query(None), timezone: str = Query("UTC"),
                              service.top_sellers(merchant, day=day, timezone_name=timezone))
     except ValueError as exc:
         raise HTTPException(422, str(exc))
-    return facts | {"digest": bedrock_digest(facts, service.currency) or render_digest(facts, service.currency)}
+    return facts | {"digest": render_digest(facts, service.currency)}
 
 
 @app.get("/stock")
@@ -198,21 +210,21 @@ async def sim_utterance(body: dict[str, str]) -> dict:
     sale_match = re.search(r"sold\s+(\d+)\s+(.+?)\s+(?:at|for)\s+([\d.]+)", lowered)
     if sale_match:
         quantity, item, price = int(sale_match.group(1)), sale_match.group(2).strip(), float(sale_match.group(3))
-        result = service.sale("demo", price * quantity, idempotency_key=f"sim-sale:{text}",
+        result = service.sale("demo", unit_price=price, idempotency_key=f"sim-sale:{text}",
                               product=item, quantity=quantity)
         calls.append({"tool": "log_sale", "arguments": {"item": item, "quantity": quantity,
                                                          "unit_price": price}})
         return {"speech": f"Logged {quantity} {item}.", "data": result.as_dict(), "tool_calls": calls}
     expense_match = re.search(r"(?:spent|expense).*?([\d.]+)", lowered)
     if expense_match:
-        amount = float(expense_match.group(1))
+        amount = Decimal(expense_match.group(1))
         result = service.expense("demo", amount, idempotency_key=f"sim-expense:{text}")
         calls.append({"tool": "log_expense", "arguments": {"amount": amount}})
         return {"speech": "Expense logged.", "data": result.as_dict(), "tool_calls": calls}
     if "paid" in lowered or "payment" in lowered:
         payment_match = re.search(r"(?:paid|payment).*?([\d.]+)", lowered)
         if payment_match:
-            amount = float(payment_match.group(1))
+            amount = Decimal(payment_match.group(1))
             customer = "Maria"
             result = service.payment("demo", amount, idempotency_key=f"sim-payment:{text}", party=customer)
             calls.append({"tool": "record_credit_payment", "arguments": {"customer": customer, "amount": amount}})
@@ -227,13 +239,6 @@ async def sim_utterance(body: dict[str, str]) -> dict:
         return {"speech": render_digest(facts, service.currency), "data": facts, "tool_calls": calls}
     return {"speech": "Try saying sold, spent, or summary.", "data": {"needs_clarification": True},
             "tool_calls": calls}
-
-
-@app.post("/simulator", response_class=HTMLResponse)
-async def simulator_post(request: Request):
-    form = await request.form()
-    result = await sim_utterance({"utterance": str(form.get("utterance", ""))})
-    return f"<p>{result['speech']}</p><pre>{result['data']}</pre><a href='/sim'>Again</a>"
 
 
 def create_app() -> FastAPI:
