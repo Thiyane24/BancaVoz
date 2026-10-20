@@ -63,3 +63,15 @@ def test_period_top_sellers():
     ledger = service()
     ledger.sale("m", 10, idempotency_key="today", product="rice", quantity=2)
     assert ledger.top_sellers("m", day="2099-01-01") == []
+
+
+def test_empty_idempotency_key_is_generated_and_conflicts_are_rejected():
+    ledger = service()
+    first = ledger.expense("m", "10", idempotency_key="")
+    assert first.idempotency_key
+    try:
+        ledger.expense("m", "11", idempotency_key=first.idempotency_key)
+    except ValueError as exc:
+        assert "different request" in str(exc)
+    else:
+        raise AssertionError("expected idempotency conflict")

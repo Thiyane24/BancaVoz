@@ -113,10 +113,11 @@ def sales(body: Transaction, merchant: str = Depends(auth)):
 
 @app.post("/expenses")
 def expenses(body: Transaction, merchant: str = Depends(auth)):
-    if not body.idempotency_key:
-        raise HTTPException(422, "idempotency_key is required")
-    return service.expense(merchant, body.amount, idempotency_key=body.idempotency_key,
-                           category=body.product or "expense").as_dict()
+    try:
+        return service.expense(merchant, body.amount, idempotency_key=body.idempotency_key,
+                               category=body.product or "expense").as_dict()
+    except ValueError as exc:
+        raise HTTPException(409 if "different request" in str(exc) else 422, str(exc))
 
 
 @app.post("/credits")

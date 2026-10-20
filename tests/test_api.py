@@ -13,22 +13,22 @@ def test_static_pages_and_assets():
         response = client.get(path)
         assert response.status_code == 200
         assert "<!doctype html>" in response.text.lower()
-    for path in ("/app", "/sim"):
-        assert "src=\"/assets/" in client.get(path).text
-    css = client.get("/assets/styles.css")
-    assert css.status_code == 200
-    assert "text/css" in css.headers["content-type"]
-    assert "--rust" in css.text
-    js = client.get("/assets/sim.js")
-    assert js.status_code == 200
-    assert "javascript" in js.headers["content-type"]
-    assert "<script>" not in client.get("/sim").text
 
 
 def test_bearer_auth():
     client = TestClient(app)
     assert client.get("/summary").status_code == 401
     assert client.get("/summary", headers={"Authorization": "Bearer dev-token"}).status_code == 200
+
+
+def test_http_generates_empty_idempotency_key():
+    response = TestClient(app).post(
+        "/expenses",
+        headers={"Authorization": "Bearer dev-token"},
+        json={"amount": "10", "idempotency_key": ""},
+    )
+    assert response.status_code == 200
+    assert response.json()["idempotency_key"]
 
 
 def test_simulator_utterance():

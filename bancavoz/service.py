@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import unicodedata
+from uuid import uuid4
 from collections import defaultdict
 from datetime import UTC, date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
@@ -49,6 +50,18 @@ class LedgerService:
                reversed_entry_id: int | None = None, request_hash: str | None = None) -> Entry:
         if amount_minor < 0:
             raise ValueError("amount_minor must be non-negative")
+        idempotency_key = idempotency_key or str(uuid4())
+        request_hash = request_hash or _request_hash({
+            "entry_type": entry_type,
+            "amount_minor": amount_minor,
+            "description": description,
+            "party": normalize_customer(party or ""),
+            "quantity": quantity,
+            "unit_price_minor": unit_price_minor,
+            "product": " ".join((product or "").split()).casefold(),
+            "metadata": metadata or {},
+            "reversed_entry_id": reversed_entry_id,
+        })
         with self.db.transaction() as conn:
             existing = conn.execute(
                 "SELECT * FROM ledger_entries WHERE merchant_id=? AND idempotency_key=?",
@@ -90,7 +103,7 @@ class LedgerService:
             "type": "sale", "total": total_minor, "unit": unit_minor,
             "quantity": quantity, "product": product, "party": normalize_customer(party or ""),
             "paid": paid_minor,
-        }) if unit_price is not None or amount_paid is not None else None
+        })
         entry = self.append(merchant_id, entry_type="sale", amount_minor=total_minor,
                            idempotency_key=idempotency_key, product=product, quantity=quantity,
                            unit_price_minor=unit_minor, party=party, description=description,
