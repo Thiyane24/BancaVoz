@@ -6,11 +6,12 @@ Evidence captured on 2026-10-20 in Python 3.15 on Windows:
 
 | Command | Output |
 | --- | --- |
-| `python -m pytest -q` | `34 passed` |
+| `python -m pytest -q` | `36 passed` |
 | `python -m pytest --cov=bancavoz --cov-report=term-missing -q` | `34 passed`; `TOTAL 721 157 78%` |
 | `python -m ruff check .` | `All checks passed!` |
 | `python -m mypy bancavoz` | `Success: no issues found in 9 source files` |
 | `python -m pip check` | `No broken requirements found.` |
+| Tailwind CLI build | `bancavoz/web/static/tailwind.css` generated successfully |
 | `python scripts/generate_mcp_tools_doc.py` | `generated docs/MCP_TOOLS.md from 10 tools` |
 | `git grep` credential-pattern scan | `secret-scan: no credential-pattern matches` |
 
