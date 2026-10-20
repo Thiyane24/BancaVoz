@@ -1,6 +1,36 @@
 from fastapi.testclient import TestClient
+import tomllib
+from pathlib import Path
 
 from bancavoz.api import app
+
+
+def test_project_metadata_packages_web_and_runtime_dependencies():
+    metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    project = metadata["project"]
+    assert project["dependencies"] == [
+        "fastapi==0.150.0",
+        "uvicorn==0.54.0",
+        "pydantic==2.14.1",
+        "mcp==1.30.0",
+        "tzdata==2026.5",
+        "psycopg[binary]==3.3.6",
+        "boto3==1.42.63",
+    ]
+    assert project["optional-dependencies"]["dev"] == [
+        "pytest==9.1.1",
+        "httpx==0.28.1",
+        "ruff==0.17.1",
+        "pytest-cov==7.1.0",
+        "mypy==2.4.0",
+        "bandit==1.9.3",
+        "pip-audit==2.10.0",
+    ]
+    assert "mcp" not in project["optional-dependencies"]
+    assert metadata["tool"]["setuptools"]["package-data"]["bancavoz"] == [
+        "web/*.html",
+        "web/static/*",
+    ]
 
 
 def test_healthz():
