@@ -290,6 +290,8 @@ class LedgerService:
 
     def top_sellers(self, merchant_id: str, limit: int = 5, *, day: str | date | None = None,
                     timezone_name: str = "UTC") -> list[dict[str, Any]]:
+        if day is None:
+            day = datetime.now(UTC if timezone_name.upper() in ("UTC", "Z") else ZoneInfo(timezone_name)).date()
         start, end = self._bounds(day, timezone_name)
         with self.db.transaction() as conn:
             sql = """SELECT product, SUM(CASE WHEN entry_type='sale' THEN quantity

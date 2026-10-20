@@ -62,7 +62,11 @@ def test_idempotency_conflict_and_stock_low_stock():
 def test_period_top_sellers():
     ledger = service()
     ledger.sale("m", 10, idempotency_key="today", product="rice", quantity=2)
+    with ledger.db.transaction() as conn:
+        conn.execute("UPDATE ledger_entries SET created_at='2020-01-01 00:00:00' WHERE id=1")
+    ledger.sale("m", 20, idempotency_key="current", product="oil", quantity=1)
     assert ledger.top_sellers("m", day="2099-01-01") == []
+    assert ledger.top_sellers("m")[0]["product"] == "oil"
 
 
 def test_empty_idempotency_key_is_generated_and_conflicts_are_rejected():
