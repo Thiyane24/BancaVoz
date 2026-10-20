@@ -12,11 +12,12 @@ dependencies = [
   "fastapi>=0.115",
   "uvicorn>=0.30",
   "pydantic>=2.7",
+  "mcp==1.30.0",
 ]
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.2"]
-mcp = ["mcp==1.30.0"]
+mcp = []
 bedrock = ["boto3>=1.35"]
 dev = ["pytest>=8.3", "httpx>=0.27", "ruff>=0.6"]
 
