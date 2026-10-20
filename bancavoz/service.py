@@ -51,6 +51,8 @@ class LedgerService:
         if amount_minor < 0:
             raise ValueError("amount_minor must be non-negative")
         idempotency_key = idempotency_key or str(uuid4())
+        metadata = dict(metadata or {})
+        metadata.setdefault("credit_delta", 0)
         request_hash = request_hash or _request_hash({
             "entry_type": entry_type,
             "amount_minor": amount_minor,
@@ -59,7 +61,7 @@ class LedgerService:
             "quantity": quantity,
             "unit_price_minor": unit_price_minor,
             "product": " ".join((product or "").split()).casefold(),
-            "metadata": metadata or {},
+            "metadata": metadata,
             "reversed_entry_id": reversed_entry_id,
         })
         with self.db.transaction() as conn:
@@ -76,7 +78,7 @@ class LedgerService:
                  quantity,unit_price_minor,product,metadata_json,reversed_entry_id,request_hash)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (merchant_id, idempotency_key, entry_type, amount_minor, self.currency, description, party,
-                 quantity, unit_price_minor, product, json.dumps(metadata or {}), reversed_entry_id, request_hash),
+                 quantity, unit_price_minor, product, json.dumps(metadata), reversed_entry_id, request_hash),
             )
             return self._row(conn.execute("SELECT * FROM ledger_entries WHERE id=?", (cur.lastrowid,)).fetchone())
 
@@ -98,7 +100,11 @@ class LedgerService:
         paid_minor = total_minor if amount_paid is None else to_minor(amount_paid)
         if paid_minor < 0 or paid_minor > total_minor:
             raise ValueError("amount_paid must be between zero and total")
-        metadata = {"amount_paid_minor": paid_minor, "credit_minor": total_minor - paid_minor}
+        metadata = {
+            "amount_paid_minor": paid_minor,
+            "credit_minor": total_minor - paid_minor,
+            "credit_delta": total_minor - paid_minor,
+        }
         request_hash = _request_hash({
             "type": "sale", "total": total_minor, "unit": unit_minor,
             "quantity": quantity, "product": product, "party": normalize_customer(party or ""),
@@ -119,6 +125,7 @@ class LedgerService:
                party: str, description: str = "Credit") -> Entry:
         return self.append(merchant_id, entry_type="credit", amount_minor=to_minor(amount),
                            idempotency_key=idempotency_key, party=party.strip(), description=description,
+                           metadata={"credit_delta": to_minor(amount)},
                            request_hash=_request_hash({"type": "credit", "amount": to_minor(amount),
                                                        "party": normalize_customer(party)}))
 
@@ -131,6 +138,7 @@ class LedgerService:
             raise ValueError(f"payment exceeds balance for {party}")
         return self.append(merchant_id, entry_type="payment", amount_minor=amount_minor,
                            idempotency_key=idempotency_key, party=party.strip(), description=description,
+                           metadata={"credit_delta": -amount_minor},
                            request_hash=_request_hash({"type": "payment", "amount": amount_minor, "party": key}))
 
     def credit_balances(self, merchant_id: str) -> dict[str, int]:
@@ -138,18 +146,9 @@ class LedgerService:
         for entry in reversed(self.list_entries(merchant_id, limit=10000)):
             if not entry.party:
                 continue
-            if entry.entry_type == "sale":
-                delta = int((entry.metadata or {}).get("credit_minor", 0))
-            elif entry.entry_type == "credit":
-                delta = entry.amount_minor
-            elif entry.entry_type == "payment":
-                delta = -entry.amount_minor
-            elif entry.entry_type == "undo":
-                delta = -int((entry.metadata or {}).get("credit_minor", 0))
-            else:
-                continue
+            delta = int((entry.metadata or {}).get("credit_delta", 0))
             key = normalize_customer(entry.party)
-            balances[key] = max(0, balances.get(key, 0) + delta)
+            balances[key] = balances.get(key, 0) + delta
         return balances
 
     def undo_last(self, merchant_id: str, *, idempotency_key: str) -> Entry:
@@ -189,6 +188,7 @@ class LedgerService:
                            quantity=target["quantity"], unit_price_minor=target["unit_price_minor"],
                            metadata={"original_entry_id": entry_id,
                                      "credit_minor": original_metadata.get("credit_minor", 0),
+                                     "credit_delta": -int(original_metadata.get("credit_delta", 0)),
                                      "original_entry_type": target["entry_type"]},
                            reversed_entry_id=entry_id)
 

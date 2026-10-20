@@ -86,3 +86,15 @@ def test_undo_last_skips_already_reversed_entries():
     assert undo_second.reversed_entry_id == second.id
     assert undo_first.reversed_entry_id == first.id
     assert undo_second.id != undo_first.id
+
+
+def test_undo_balance_deltas_restore_payment_and_remove_credit():
+    ledger = service()
+    sale = ledger.sale("m", unit_price="10", quantity=1, amount_paid="0",
+                       customer="Maria", idempotency_key="sale-credit")
+    payment = ledger.payment("m", "4", party="Maria", idempotency_key="payment")
+    assert ledger.credit_balances("m")["maria"] == 600
+    ledger.undo("m", payment.id, idempotency_key="undo-payment")
+    assert ledger.credit_balances("m")["maria"] == 1000
+    ledger.undo("m", sale.id, idempotency_key="undo-sale")
+    assert ledger.credit_balances("m")["maria"] == 0
