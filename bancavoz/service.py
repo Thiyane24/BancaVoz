@@ -5,7 +5,7 @@ import json
 import unicodedata
 from uuid import uuid4
 from collections import defaultdict
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -301,19 +301,37 @@ class LedgerService:
         return [x for x in result if not low_stock or (x["quantity"] is not None and x["quantity"] <= x["low_stock_threshold"])]
 
     def top_sellers(self, merchant_id: str, limit: int = 5, *, day: str | date | None = None,
+                    period: str = "today",
                     timezone_name: str = "UTC") -> list[dict[str, Any]]:
         if day is None:
-            day = datetime.now(UTC if timezone_name.upper() in ("UTC", "Z") else ZoneInfo(timezone_name)).date()
-        start, end = self._bounds(day, timezone_name)
+            tz = UTC if timezone_name.upper() in ("UTC", "Z") else ZoneInfo(timezone_name)
+            current = datetime.now(tz).date()
+            day = current
+        if period not in ("today", "week", "month"):
+                raise ValueError("period must be today, week, or month")
+        local_day = date.fromisoformat(day) if isinstance(day, str) else day
+        range_start = local_day
+        range_end = local_day
+        if period == "week":
+            range_start = local_day - timedelta(days=local_day.weekday())
+            range_end = range_start + timedelta(days=6)
+        elif period == "month":
+            range_start = local_day.replace(day=1)
+            next_month = (range_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+            range_end = next_month - timedelta(days=1)
+        start, _ = self._bounds(range_start, timezone_name)
+        _, end = self._bounds(range_end, timezone_name)
         with self.db.transaction() as conn:
-            sql = """SELECT product, SUM(CASE WHEN entry_type='sale' THEN quantity
-                     WHEN entry_type='undo' THEN -quantity ELSE 0 END) sold
-                     FROM ledger_entries WHERE merchant_id=? AND product IS NOT NULL"""
+            sql = """SELECT product, SUM(quantity) sold, SUM(amount_minor) revenue
+                     FROM ledger_entries e WHERE merchant_id=? AND entry_type='sale'
+                     AND product IS NOT NULL
+                     AND NOT EXISTS (SELECT 1 FROM ledger_entries u
+                       WHERE u.entry_type='undo' AND u.reversed_entry_id=e.id)"""
             params: list[Any] = [merchant_id]
             if start:
                 sql += " AND created_at BETWEEN ? AND ?"
                 params += [start, end]
-            sql += " GROUP BY product ORDER BY sold DESC LIMIT ?"
+            sql += " GROUP BY product ORDER BY revenue DESC LIMIT ?"
             params.append(limit)
             rows = conn.execute(sql, params).fetchall()
-        return [{"product": r["product"], "sold": r["sold"]} for r in rows]
+        return [{"product": r["product"], "sold": r["sold"], "revenue": r["revenue"]} for r in rows]
