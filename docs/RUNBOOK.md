@@ -6,16 +6,16 @@ Evidence captured on 2026-10-20 in Python 3.15 on Windows:
 
 | Command | Output |
 | --- | --- |
-| `python -m pytest -q` | `20 passed` |
-| `python -m pytest --cov=bancavoz --cov-report=term-missing -q` | `20 passed`; `TOTAL 590 177 70%` |
+| `python -m pytest -q` | `31 passed` |
+| `python -m pytest --cov=bancavoz --cov-report=term-missing -q` | `31 passed`; `TOTAL 604 109 82%` |
 | `python -m ruff check .` | `All checks passed!` |
 | `python -m mypy bancavoz` | `Success: no issues found in 9 source files` |
 | `python scripts/generate_mcp_tools_doc.py` | `generated docs/MCP_TOOLS.md from 10 tools` |
 | `git grep` credential-pattern scan | `secret-scan: no credential-pattern matches` |
 
 The MCP script also recorded HTTP 200 for `initialize` and `tools/list`, with
-10 tools returned. The local test suite uses the official SDK route at
-`/mcp/`; `/mcp-legacy` is a separate compatibility endpoint.
+10 tools returned. The local test suite uses the official SDK routes at both
+`/mcp` and `/mcp/`.
 
 ## Local deployment
 

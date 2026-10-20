@@ -7,7 +7,7 @@ import uuid
 from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TypedDict
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -53,7 +53,15 @@ MCP_TOOLS = [
     {"name": "get_daily_summary", "description": "Summarize the ledger.", "inputSchema": {"type": "object"}},
     {"name": "undo_last_entry", "description": "Reverse a ledger entry.", "inputSchema": {"type": "object"}},
 ]
-_demo_sale_context: dict[str, dict[str, object]] = {}
+
+class DemoSaleContext(TypedDict):
+    entry_id: int
+    item: str
+    quantity: int
+    unit_price: Decimal
+
+
+_demo_sale_context: dict[str, DemoSaleContext] = {}
 
 
 def auth(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
